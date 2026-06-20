@@ -5,6 +5,8 @@
 #include "AeroFlip.h"
 #include "CD3D9ExRendererApi.h" 
 #include "CWindowProvider.h" 
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
 
 #define MAX_LOADSTRING 100
 
@@ -162,7 +164,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 	g_hst = hInstance;
 
 	HWND hWnd = CreateWindowEx(
-		WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW,
+		WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
 		g_szWindowClass,
 		g_szTitle,
 		WS_POPUP,
@@ -271,8 +273,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 void MakeWindowTransparent(HWND hWnd)
 {
-	SetWindowLong(hWnd, GWL_EXSTYLE, GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
-	SetLayeredWindowAttributes(hWnd, RGB(255, 0, 255), 0, LWA_COLORKEY);
+	MARGINS margins = { -1, -1, -1, -1 };
+	DwmExtendFrameIntoClientArea(hWnd, &margins);
+
+	enum DWM_SYSTEMBACKDROP_TYPE {
+		DWMSBT_AUTO = 0,
+		DWMSBT_NONE = 1,            
+		DWMSBT_MAINWINDOW = 2,      
+		DWMSBT_TRANSIENTWINDOW = 3, 
+		DWMSBT_TABBEDWINDOW = 4     
+	};
+
+	int backdropType = DWMSBT_NONE;
+	DwmSetWindowAttribute(hWnd, (DWMWINDOWATTRIBUTE)38, &backdropType, sizeof(backdropType));
 }
 
 void CALLBACK WinEventProc(
@@ -301,7 +314,7 @@ void CALLBACK WinEventProc(
 		g_bWindowListDirty = TRUE;
 		if (g_pWindowProvider)
 		{
-			g_pWindowProvider->InvalidateWindow(hWnd); 
+			g_pWindowProvider->InvalidateWindow(hWnd);
 		}
 		break;
 
@@ -317,7 +330,7 @@ void CALLBACK WinEventProc(
 
 	case EVENT_SYSTEM_MINIMIZEEND:
 		g_bWindowListDirty = TRUE;
-		if (g_pWindowProvider) 
+		if (g_pWindowProvider)
 		{
 			g_pWindowProvider->InvalidateWindow(hWnd);
 			g_pWindowProvider->SetWindowMinimizedFlag(hWnd, FALSE);

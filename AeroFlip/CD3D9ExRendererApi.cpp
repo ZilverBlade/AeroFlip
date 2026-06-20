@@ -286,7 +286,7 @@ namespace aeroflip
 		}
 
 		// chroma clear
-		D3DCOLOR clearColor = D3DCOLOR_ARGB(0, 255, 0, 255);
+		D3DCOLOR clearColor = D3DCOLOR_ARGB(0, 0, 0, 0);
 		m_pD3D9ExDevice->Clear(0, NULL, D3DCLEAR_TARGET, clearColor, 1.0f, 0);
 
 		if (SUCCEEDED(m_pD3D9ExDevice->BeginScene()))
