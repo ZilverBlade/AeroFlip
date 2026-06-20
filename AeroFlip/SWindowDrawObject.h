@@ -13,6 +13,7 @@ namespace aeroflip
 		FLOAT fOpacity; 
 		INT iZOrder;
 
-		BOOL bIsFocused;
+		BOOL bFocused;
+		BOOL bDesktopBg;
 	};
 }

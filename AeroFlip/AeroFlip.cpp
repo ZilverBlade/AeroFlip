@@ -8,6 +8,7 @@
 #include "CWindowProvider.h" 
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
+#include <shlobj.h> 
 
 #include <algorithm>
 #include <sstream>
@@ -19,15 +20,15 @@
         ScopeTimer(const wchar_t* l) : label(l) { \
             QueryPerformanceFrequency(&freq); \
             QueryPerformanceCounter(&start); \
-		        } \
+																														        } \
         ~ScopeTimer() { \
             QueryPerformanceCounter(&end); \
             double ms = (double)(end.QuadPart - start.QuadPart) * 1000.0 / (double)freq.QuadPart; \
             std::wstringstream ss; \
             ss << L"[PROFILE] " << label << L": " << ms << L" ms\n"; \
             OutputDebugStringW(ss.str().c_str()); \
-		        } \
-	    } timer_##__LINE__(name)
+																														        } \
+															    } timer_##__LINE__(name)
 
 #define MAX_LOADSTRING 100
 
@@ -51,7 +52,7 @@ std::vector<aeroflip::SWindowDrawObject> g_DrawObjects;
 ATOM				MyRegisterClass(HINSTANCE);
 BOOL				InitInstance(HINSTANCE, int);
 void				WakeAeroFlip(HWND);
-void				DismissAeroFlip(HWND, HWND);
+void				DismissAeroFlip(HWND, HWND, BOOL);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 void CALLBACK		WinEventProc(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD);
 LRESULT CALLBACK	LowLevelKeyboardProc(int, WPARAM, LPARAM);
@@ -60,6 +61,7 @@ void				UpdateWindowAnimations(FLOAT);
 void				MakeWindowTransparent(HWND);
 void				InitializeWindowEventHook();
 void				CleanupWindowEventHook();
+void				FocusDesktopViaShell();
 
 int APIENTRY _tWinMain(
 	_In_ HINSTANCE hInstance,
@@ -153,17 +155,19 @@ int APIENTRY _tWinMain(
 				if (!bAltHeld)
 				{
 					HWND hTargetApp = NULL;
+					BOOL bDesktop = FALSE;
 					if (!g_DrawObjects.empty() && g_uActiveIndex < (UINT)g_DrawObjects.size())
 					{
 						hTargetApp = g_DrawObjects[g_uActiveIndex].hTargetWnd;
+						bDesktop = g_DrawObjects[g_uActiveIndex].bDesktopBg;
 					}
 					else
 					{
 						hTargetApp = g_pWindowProvider->HGetActiveWindow();
 					}
 
-					DismissAeroFlip(hWnd, hTargetApp);
-					GetAsyncKeyState(VK_MENU); 
+					DismissAeroFlip(hWnd, hTargetApp, bDesktop);
+					GetAsyncKeyState(VK_MENU);
 					continue;
 				}
 
@@ -181,7 +185,8 @@ int APIENTRY _tWinMain(
 					for (UINT i = 0; i < cTargets; ++i)
 					{
 						updatedObjects[i].hTargetWnd = pTargets[i].hWnd;
-						updatedObjects[i].bIsFocused = pTargets[i].bActive;
+						updatedObjects[i].bFocused = pTargets[i].bActive;
+						updatedObjects[i].bDesktopBg = pTargets[i].bDesktopWindow;
 
 						// Retain spatial positions if this window existed previously
 						bool bFoundOld = false;
@@ -322,7 +327,7 @@ void WakeAeroFlip(HWND hWnd)
 	SetForegroundWindow(hWnd);
 }
 
-void DismissAeroFlip(HWND hWnd, HWND hSelectedApp)
+void DismissAeroFlip(HWND hWnd, HWND hSelectedApp, BOOL bDesktopBackground)
 {
 	ShowWindow(hWnd, SW_HIDE);
 	// reduce memory usage when dismissed
@@ -332,25 +337,23 @@ void DismissAeroFlip(HWND hWnd, HWND hSelectedApp)
 	}
 	// clear up RAM
 	SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
-	if (hSelectedApp != NULL)
+
+	if (bDesktopBackground)
 	{
-		if (hSelectedApp == GetDesktopWindow()) 
+		FocusDesktopViaShell();
+	}
+	else if (hSelectedApp != NULL)
+	{
+		if (IsIconic(hSelectedApp))
 		{
-			
+			ShowWindow(hSelectedApp, SW_RESTORE);
 		}
 		else
 		{
-			if (IsIconic(hSelectedApp))
+			HWND hForeground = GetForegroundWindow();
+			if (hForeground != hSelectedApp)
 			{
-				ShowWindow(hSelectedApp, SW_RESTORE);
-			}
-			else
-			{
-				HWND hForeground = GetForegroundWindow();
-				if (hForeground != hSelectedApp)
-				{
-					SetForegroundWindow(hSelectedApp);
-				}
+				SetForegroundWindow(hSelectedApp);
 			}
 		}
 	}
@@ -557,5 +560,33 @@ void CleanupWindowEventHook()
 
 	if (g_hEventHook) {
 		UnhookWinEvent(g_hEventHook);
+	}
+}
+
+
+void FocusDesktopViaShell()
+{
+	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+
+	IShellDispatch4* pShellDispatch = NULL;
+	hr = CoCreateInstance(CLSID_Shell, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pShellDispatch));
+
+	if (SUCCEEDED(hr) && pShellDispatch)
+	{
+		pShellDispatch->ToggleDesktop();
+		pShellDispatch->Release();
+	}
+	else
+	{
+		HWND hShell = FindWindow(L"Shell_TrayWnd", NULL);
+		if (hShell)
+		{
+			SendMessage(hShell, WM_COMMAND, 419, 0); // 419 is the ID for 'Minimize All Windows'
+		}
+	}
+
+	if (SUCCEEDED(hr))
+	{
+		CoUninitialize();
 	}
 }

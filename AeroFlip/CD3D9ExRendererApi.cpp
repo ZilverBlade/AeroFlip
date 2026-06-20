@@ -31,6 +31,8 @@ namespace aeroflip
 		UINT width = 0;
 		UINT height = 0;
 		BOOL bUseRAMCache = (pTarget->bMinimized && pTarget->pCachedPixels != NULL);
+		// mip maps are super slow :/
+		const BOOL bMipMaps = FALSE;
 
 		if (bUseRAMCache)
 		{
@@ -83,7 +85,7 @@ namespace aeroflip
 		{
 			SafeRelease(*ppTexture);
 
-			HRESULT hr = pDevice->CreateTexture(width, height, 0,
+			HRESULT hr = pDevice->CreateTexture(width, height, bMipMaps ? 0 : 1,
 				D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
 				ppTexture, NULL);
 
@@ -147,8 +149,10 @@ namespace aeroflip
 
 		(*ppTexture)->UnlockRect(0);
 
-		DEVICE_CALL(D3DXFilterTexture(*ppTexture, NULL, 0, D3DX_DEFAULT));
-
+		if (bMipMaps)
+		{
+			DEVICE_CALL(D3DXFilterTexture(*ppTexture, NULL, 0, D3DX_DEFAULT));
+		}
 		return S_OK;
 	}
 
@@ -189,6 +193,9 @@ namespace aeroflip
 		UINT uNumWindowTargets = 0;
 		pWindowProvider->QueryWindows(&pWindowTargets, &uNumWindowTargets);
 
+		UINT uTexturesCapturedThisFrame = 0;
+		const UINT uMaxCapturesPerFrame = 4;
+
 		for (UINT uIndex = 0; uIndex < uNumWindowTargets; ++uIndex)
 		{
 			const SWindowTarget* pTarget = pWindowTargets + uIndex;
@@ -221,9 +228,13 @@ namespace aeroflip
 
 			if (pTarget->bNeedsUpdate)
 			{
-				if (SUCCEEDED(CaptureWindowToTexture(pTarget, m_pD3D9ExDevice, &pTexturePair->pD3D9Texture)))
+				if (uTexturesCapturedThisFrame < uMaxCapturesPerFrame)
 				{
-					pWindowProvider->MarkWindowUpdated(hTargetWnd);
+					if (SUCCEEDED(CaptureWindowToTexture(pTarget, m_pD3D9ExDevice, &pTexturePair->pD3D9Texture)))
+					{
+						pWindowProvider->MarkWindowUpdated(hTargetWnd);
+						uTexturesCapturedThisFrame++;
+					}
 				}
 			}
 
@@ -231,7 +242,7 @@ namespace aeroflip
 			remainingWindows.push_back(hTargetWnd);
 		}
 
-		for (auto it = m_WindowTextureList.begin(); it != m_WindowTextureList.end(); ++it)
+		for (auto it = m_WindowTextureList.begin(); it != m_WindowTextureList.end();)
 		{
 			BOOL bPersists = FALSE;
 			for (auto hCandidateWnd : remainingWindows)
@@ -246,6 +257,10 @@ namespace aeroflip
 			{
 				SafeRelease(it->pD3D9Texture);
 				it = m_WindowTextureList.erase(it);
+			}
+			else
+			{
+				++it;
 			}
 		}
 	}
@@ -264,7 +279,6 @@ namespace aeroflip
 	{
 		if (!m_pD3D9ExDevice) return;
 
-		// 1. Cooperative Recovery Checks
 		HRESULT hr = m_pD3D9ExDevice->TestCooperativeLevel();
 		if (hr == D3DERR_DEVICENOTRESET)
 		{
@@ -276,7 +290,6 @@ namespace aeroflip
 			throw std::runtime_error("D3D9 device lost!");
 		}
 
-		// 2. Clear Scene
 		D3DCOLOR clearColor = D3DCOLOR_ARGB(0, 0, 0, 0);
 		m_pD3D9ExDevice->Clear(0, NULL, D3DCLEAR_TARGET, clearColor, 1.0f, 0);
 
@@ -363,7 +376,7 @@ namespace aeroflip
 		m_D3DPresentParams.BackBufferFormat = D3DFMT_A8R8G8B8;
 		m_D3DPresentParams.MultiSampleType = (D3DMULTISAMPLE_TYPE)uMultiSampleLevel;
 		m_D3DPresentParams.SwapEffect = D3DSWAPEFFECT_DISCARD;
-		m_D3DPresentParams.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE; //D3DPRESENT_INTERVAL_DEFAULT;
+		m_D3DPresentParams.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
 
 		D3DDISPLAYMODEEX mode;
 		mode.Size = sizeof(D3DDISPLAYMODEEX);
