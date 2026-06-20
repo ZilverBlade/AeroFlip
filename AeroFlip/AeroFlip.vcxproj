@@ -166,6 +166,8 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>d3d9.lib;$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)\d3dx9.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
+      <UACUIAccess>false</UACUIAccess>
     </Link>
     <PreBuildEvent>
       <Command>cd /d "$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(DevEnvDir)..\..\VC\bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
@@ -238,6 +240,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>d3d9.lib;$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)\d3dx9.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
+      <UACUIAccess>false</UACUIAccess>
     </Link>
     <PreBuildEvent>
       <Command>cd /d "$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(DevEnvDir)..\..\VC\bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
@@ -248,8 +252,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AeroFlip.h" />
-    <ClInclude Include="CRendererApi.h" />
+    <ClInclude Include="CD3D9ExRendererApi.h" />
     <ClInclude Include="CWindowProvider.h" />
+    <ClInclude Include="IRendererApi.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="SWindowTarget.h" />
@@ -257,7 +262,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AeroFlip.cpp" />
-    <ClCompile Include="CRendererApi.cpp" />
+    <ClCompile Include="CD3D9ExRendererApi.cpp" />
     <ClCompile Include="CWindowProvider.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

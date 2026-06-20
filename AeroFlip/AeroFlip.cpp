@@ -3,7 +3,7 @@
 
 #include "stdafx.h"
 #include "AeroFlip.h"
-#include "CRendererApi.h" 
+#include "CD3D9ExRendererApi.h" 
 #include "CWindowProvider.h" 
 
 #define MAX_LOADSTRING 100
@@ -13,112 +13,110 @@ HINSTANCE g_hst = NULL;								// current instance
 TCHAR g_szTitle[MAX_LOADSTRING];						// The title bar text
 TCHAR g_szWindowClass[MAX_LOADSTRING];					// the main window class name
 HWINEVENTHOOK g_hEventHook = NULL;
-aeroflip::CRendererApi* g_pRenderer = NULL;				// D3D9 renderer
+HHOOK g_hKeyboardHook = NULL;
+aeroflip::IRendererApi* g_pRenderer = NULL;				// Windowing renderer
 aeroflip::CWindowProvider* g_pWindowProvider = NULL;	// DWMAPI Provider
 BOOL g_bWindowDirty = TRUE;
 
 // Forward declarations of functions included in this code module:
 ATOM				MyRegisterClass(HINSTANCE);
 BOOL				InitInstance(HINSTANCE, int);
+void				WakeAeroFlip(HWND);
+void				DismissAeroFlip(HWND, HWND);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 void CALLBACK		WinEventProc(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD);
+LRESULT CALLBACK	LowLevelKeyboardProc(int, WPARAM, LPARAM);
+
 void				MakeWindowTransparent(HWND);
 void				InitializeWindowEventHook();
 void				CleanupWindowEventHook();
 
-int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
+int APIENTRY _tWinMain(
+	_In_ HINSTANCE hInstance,
 	_In_opt_ HINSTANCE hPrevInstance,
-	_In_ LPTSTR    lpCmdLine,
-	_In_ int       nCmdShow)
+	_In_ LPTSTR lpCmdLine,
+	_In_ int nCmdShow)
 {
 	UNREFERENCED_PARAMETER(hPrevInstance);
 	UNREFERENCED_PARAMETER(lpCmdLine);
-
-	MSG msg;
-	HACCEL hAccelTable;
 
 	LoadString(hInstance, IDS_APP_TITLE, g_szTitle, MAX_LOADSTRING);
 	LoadString(hInstance, IDC_AEROFLIP, g_szWindowClass, MAX_LOADSTRING);
 	MyRegisterClass(hInstance);
 
-	if (!InitInstance(hInstance, nCmdShow))
-	{
-		return FALSE;
-	}
-
-	hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_AEROFLIP));
+	if (!InitInstance(hInstance, nCmdShow)) return FALSE;
 
 	HWND hWnd = FindWindow(g_szWindowClass, g_szTitle);
 
-	try {
-		aeroflip::SRendererApiConfig config;
-		ZeroMemory(&config, sizeof(aeroflip::SRendererApiConfig));
-		config.hWnd = hWnd;
-		config.bHardwareAcceleration = TRUE;
-		config.uMultiSampleLevel = 0;
+	{
+		aeroflip::SWindowProviderConfig wConfig;
+		ZeroMemory(&wConfig, sizeof(aeroflip::SWindowProviderConfig));
 
-		g_pRenderer = new aeroflip::CRendererApi(&config);
-	}
-	catch (std::exception ex) {
-		OutputDebugStringA(ex.what());
-		OutputDebugStringA("\n");
-		return FALSE;
-	}
+		wConfig.hWnd = hWnd;
+		wConfig.szAppWindowClass = g_szWindowClass;
 
-	try {
-		aeroflip::SWindowProviderConfig config;
-		ZeroMemory(&config, sizeof(aeroflip::SWindowProviderConfig));
-		config.hWnd = hWnd;
-		config.szAppWindowClass = g_szWindowClass;
-
-		g_pWindowProvider = new aeroflip::CWindowProvider(&config);
-	}
-	catch (std::exception ex) {
-		delete g_pRenderer;
-		g_pRenderer = NULL;
-		OutputDebugStringA(ex.what());
-		OutputDebugStringA("\n");
-		return FALSE;
+		g_pWindowProvider = new aeroflip::CWindowProvider(&wConfig);
 	}
 
 	InitializeWindowEventHook();
 
-	ZeroMemory(&msg, sizeof(msg));
+	MSG msg;
+	ZeroMemory(&msg, sizeof(MSG));
+
 	while (msg.message != WM_QUIT)
 	{
 		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 		{
-			if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+
+			if (msg.message == WM_HOTKEY && msg.wParam == 1)
 			{
-				TranslateMessage(&msg);
-				DispatchMessage(&msg);
+				HWND hLastActiveWindow = GetForegroundWindow();
+
+				g_pWindowProvider->UpdateWindowList();
+				if (hLastActiveWindow != hWnd)
+				{
+					g_pWindowProvider->FlagActiveWindow(hLastActiveWindow);
+				}
+				WakeAeroFlip(hWnd);
 			}
 		}
 		else
 		{
-			try {
-				if (g_bWindowDirty) {
+			if (IsWindowVisible(hWnd))
+			{
+				bool bAltHeld = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+
+				if (!bAltHeld)
+				{
+					DismissAeroFlip(hWnd, g_pWindowProvider->HGetActiveWindow());
+					GetAsyncKeyState(VK_MENU);
+					continue;
+				}
+
+				if (g_bWindowDirty)
+				{
 					g_pWindowProvider->UpdateWindowList();
-					g_pRenderer->UpdateWindows(g_pWindowProvider);
+					if (g_pRenderer) {
+						g_pRenderer->UpdateWindows(g_pWindowProvider);
+					}
 					g_bWindowDirty = FALSE;
 				}
-				g_pRenderer->OnRender(0.0f);
+				if (g_pRenderer) {
+					g_pRenderer->OnRender(0.0f);
+				}
 			}
-			catch (std::exception ex) {
-				OutputDebugStringA(ex.what());
-				OutputDebugStringA("\n");
-				msg.message = WM_QUIT;
-				msg.wParam = 1;
+			else
+			{
+				Sleep(10);
 			}
 		}
 	}
 
 	CleanupWindowEventHook();
-
 	delete g_pRenderer;
-	g_pRenderer = NULL;
 	delete g_pWindowProvider;
-	g_pWindowProvider = NULL;
 	return (int)msg.wParam;
 }
 
@@ -144,22 +142,75 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 	return RegisterClassEx(&wcex);
 }
 
-BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
+BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
+{
+	UNREFERENCED_PARAMETER(nCmdShow);
+
 	g_hst = hInstance;
 
-	HWND hWnd = CreateWindow(g_szWindowClass, g_szTitle, WS_OVERLAPPEDWINDOW,
-		CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, hInstance, NULL);
+	HWND hWnd = CreateWindowEx(
+		WS_EX_TOPMOST | WS_EX_LAYERED, 
+		g_szWindowClass,
+		g_szTitle,
+		WS_POPUP,
+		0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN),
+		NULL, NULL, hInstance, NULL
+		);
 
 	if (!hWnd)
 	{
 		return FALSE;
 	}
 
-	ShowWindow(hWnd, nCmdShow);
+	if (!RegisterHotKey(hWnd, 1, MOD_CONTROL | MOD_WIN, VK_TAB))
+	{
+		OutputDebugString(L"Failed to register global shortcut!\n");
+		return FALSE;
+	}
+
+	ShowWindow(hWnd, SW_HIDE);
+	//ShowWindow(hWnd, nCmdShow);
 	MakeWindowTransparent(hWnd);
 	UpdateWindow(hWnd);
 
 	return TRUE;
+}
+
+void WakeAeroFlip(HWND hWnd)
+{
+	if (g_pRenderer == NULL)
+	{
+		aeroflip::SD3D9ExRendererApiConfig rConfig;
+		ZeroMemory(&rConfig, sizeof(aeroflip::SD3D9ExRendererApiConfig));
+
+		rConfig.hWnd = hWnd;
+		rConfig.bHardwareAcceleration = TRUE;
+		rConfig.uMultiSampleLevel = 0;
+
+		g_pRenderer = new aeroflip::CD3D9ExRendererApi(&rConfig);
+	}
+	g_bWindowDirty = TRUE; // Force an immediate refresh of the window targets
+	ShowWindow(hWnd, SW_SHOW);
+	SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+	SetForegroundWindow(hWnd);
+}
+
+void DismissAeroFlip(HWND hWnd, HWND hSelectedApp)
+{
+	ShowWindow(hWnd, SW_HIDE);
+	// reduce memory usage when dismissed
+	if (g_pRenderer != NULL) 
+	{
+		delete g_pRenderer;
+		g_pRenderer = NULL;
+	}
+	// clear up RAM
+	SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
+	if (hSelectedApp != NULL)
+	{
+		ShowWindow(hSelectedApp, SW_RESTORE);
+		SetForegroundWindow(hSelectedApp);
+	}
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -190,7 +241,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-void MakeWindowTransparent(HWND hWnd) {
+void MakeWindowTransparent(HWND hWnd)
+{
 	SetWindowLong(hWnd, GWL_EXSTYLE, GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
 	SetLayeredWindowAttributes(hWnd, RGB(0, 255, 255), 0, LWA_COLORKEY);
 }
@@ -202,7 +254,8 @@ void CALLBACK WinEventProc(
 	LONG idObject,
 	LONG idChild,
 	DWORD dwEventThread,
-	DWORD dwmsEventTime) {
+	DWORD dwmsEventTime)
+{
 
 	UNREFERENCED_PARAMETER(hWinEventHook);
 	UNREFERENCED_PARAMETER(hWnd);
@@ -212,41 +265,101 @@ void CALLBACK WinEventProc(
 	if (idObject != OBJID_WINDOW || idChild != CHILDID_SELF) return;
 
 	switch (event) {
-	case EVENT_OBJECT_DESTROY: {
+	case EVENT_OBJECT_DESTROY:
+	{
 		OutputDebugString(L"A window was closed. Refreshing deck list.\n");
 		g_bWindowDirty = TRUE;
 		break;
 	}
 
-	case EVENT_SYSTEM_MOVESIZEEND: {
+	case EVENT_SYSTEM_MOVESIZEEND:
+	{
 		OutputDebugString(L"A window was resized/moved. Updating target texture.\n");
 		g_bWindowDirty = TRUE;
 		break;
 	}
 
-	case EVENT_SYSTEM_MINIMIZESTART: {
+	case EVENT_SYSTEM_MINIMIZESTART:
+	{
 		break;
 	}
 
-	case EVENT_SYSTEM_MINIMIZEEND: {
+	case EVENT_SYSTEM_MINIMIZEEND:
+	{
 		OutputDebugString(L"A window was restored. Updating target texture.\n");
 		g_bWindowDirty = TRUE;
 		break;
 	}
 	}
 }
-void InitializeWindowEventHook() {
-	g_hEventHook = SetWinEventHook(
-		EVENT_SYSTEM_MOVESIZESTART,
-		EVENT_OBJECT_DESTROY,
-		NULL,
-		WinEventProc,
-		0,
-		0,
-		WINEVENT_OUTOFCONTEXT);
+LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+	if (nCode == HC_ACTION)
+	{
+		KBDLLHOOKSTRUCT* pKeyStruct = (KBDLLHOOKSTRUCT*)lParam;
+
+		if (pKeyStruct->vkCode == VK_TAB)
+		{
+			bool bAltPressed = (pKeyStruct->flags & LLKHF_ALTDOWN) != 0;
+
+			if (bAltPressed)
+			{
+				if (wParam == WM_SYSKEYDOWN)
+				{
+					HWND hWnd = FindWindow(g_szWindowClass, g_szTitle);
+
+					if (!IsWindowVisible(hWnd))
+					{
+						g_pWindowProvider->UpdateWindowList();
+
+						HWND hLastActiveWindow = GetForegroundWindow();
+						if (hLastActiveWindow != hWnd)
+						{
+							g_pWindowProvider->FlagActiveWindow(hLastActiveWindow);
+						}
+
+						WakeAeroFlip(hWnd);
+					}
+					else
+					{
+						if (g_pWindowProvider)
+						{
+							g_bWindowDirty = TRUE;
+						}
+					}
+
+					return 1;
+				}
+
+				if (wParam == WM_SYSKEYUP)
+				{
+					return 1;
+				}
+			}
+		}
+	}
+
+	return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
 }
 
-void CleanupWindowEventHook() {
+void InitializeWindowEventHook()
+{
+	g_hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
+	if (!g_hKeyboardHook) {
+		OutputDebugString(L"Failed to install Low-Level Keyboard Hook!\n");
+	}
+
+	g_hEventHook = SetWinEventHook(
+		EVENT_SYSTEM_MOVESIZESTART, EVENT_OBJECT_DESTROY,
+		NULL, WinEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
+}
+
+void CleanupWindowEventHook()
+{
+	if (g_hKeyboardHook) {
+		UnhookWindowsHookEx(g_hKeyboardHook);
+	}
+
 	if (g_hEventHook) {
 		UnhookWinEvent(g_hEventHook);
 	}

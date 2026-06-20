@@ -30,13 +30,16 @@
     <ClInclude Include="AeroFlip.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CRendererApi.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="CWindowProvider.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="SWindowTarget.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IRendererApi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CD3D9ExRendererApi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -47,10 +50,10 @@
     <ClCompile Include="AeroFlip.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="CRendererApi.cpp">
+    <ClCompile Include="CWindowProvider.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="CWindowProvider.cpp">
+    <ClCompile Include="CD3D9ExRendererApi.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -7,9 +7,12 @@
 // Windows 8+ only
 #define DWMWA_CLOAKED 13
 
-namespace aeroflip {
-	BOOL IsWindows8OrGreater() {
-		OSVERSIONINFOEXW osvi = { 0 };
+namespace aeroflip
+{
+	BOOL IsWindows8OrGreater()
+	{
+		OSVERSIONINFOEXW osvi;
+		ZeroMemory(&osvi, sizeof(OSVERSIONINFOEXW));
 		osvi.dwOSVersionInfoSize = sizeof(osvi);
 		osvi.dwMajorVersion = 6;
 		osvi.dwMinorVersion = 2; // 6.2 is Windows 8
@@ -21,35 +24,45 @@ namespace aeroflip {
 		return VerifyVersionInfoW(&osvi, VER_MAJORVERSION | VER_MINORVERSION, dwlConditionMask) != FALSE;
 	}
 
-	struct SEnumContext {
+	struct SEnumContext
+	{
 		std::vector<SWindowTarget>* pList;
-		const WCHAR* szIgnoreClass; 
+		const WCHAR* szIgnoreClass;
 	};
 
 	// Callback filter logic
-	BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam) {
+	BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
+	{
 		const SEnumContext* pContext = (const SEnumContext*)lParam;
 
 		// Desktop window is special
-		if (hWnd == GetShellWindow()) {
+		if (hWnd == GetShellWindow())
+		{
 			SWindowTarget target;
 			ZeroMemory(&target, sizeof(SWindowTarget));
 			target.bDesktopWindow = TRUE;
 			target.hWnd = hWnd;
 			wcscpy_s(target.szTitle, L"Desktop");
 			pContext->pList->push_back(target);
-			return TRUE; 
+			return TRUE;
 		}
 
-		if (!IsWindowVisible(hWnd)) return TRUE;
-
-		if (IsWindows8OrGreater()) {
+		if (!IsWindowVisible(hWnd))
+		{
+			return TRUE;
+		}
+		if (IsWindows8OrGreater())
+		{
 			int cloaked = 0;
 			DwmGetWindowAttribute(hWnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
-			if (cloaked) return TRUE;
+			if (cloaked)
+			{
+				return TRUE;
+			}
 		}
 		LONG exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
-		if (exStyle & WS_EX_TOOLWINDOW) {
+		if (exStyle & WS_EX_TOOLWINDOW)
+		{
 			return TRUE;
 		}
 
@@ -64,11 +77,14 @@ namespace aeroflip {
 		WCHAR szClassName[256];
 		ZeroMemory(szClassName, sizeof(szClassName));
 		GetClassName(hWnd, szClassName, 256);
-		if (wcsncmp(szClassName, pContext->szIgnoreClass, 256) == 0) return TRUE;
-
+		if (wcsncmp(szClassName, pContext->szIgnoreClass, 256) == 0)
+		{
+			return TRUE;
+		}
 		if (wcscmp(szClassName, L"Windows.UI.Core.CoreWindow") == 0 ||
 			wcscmp(szClassName, L"Shell_TrayWnd") == 0 ||
-			wcscmp(szClassName, L"Progman") == 0) {
+			wcscmp(szClassName, L"Progman") == 0)
+		{
 			return TRUE;
 		}
 
@@ -82,36 +98,46 @@ namespace aeroflip {
 	}
 
 	CWindowProvider::CWindowProvider(const SWindowProviderConfig* pConfig)
-		: m_hWindow(pConfig->hWnd), m_szAppWindowClass(pConfig->szAppWindowClass) {
-		
+		: m_hWindow(pConfig->hWnd), m_szAppWindowClass(pConfig->szAppWindowClass)
+	{
 	}
 
-	CWindowProvider::~CWindowProvider() {
-		
+	CWindowProvider::~CWindowProvider()
+	{
 	}
 
-	void CWindowProvider::UpdateWindowList() {
+	void CWindowProvider::UpdateWindowList()
+	{
 		m_ActiveWindows.clear();
 
 		SEnumContext context;
 		context.pList = &m_ActiveWindows;
 		context.szIgnoreClass = m_szAppWindowClass;
 		EnumWindows(EnumWindowsProc, (LPARAM)&context);
+
+		FlagActiveWindow(m_hLastActiveWindow);
 	}
 
-	HWND CWindowProvider::HGetFocusedWindow() {
-		if (m_ActiveWindows.empty()) return NULL;
-		return m_ActiveWindows[0].hWnd;
-	}
-
-	HWND CWindowProvider::HEnumWindows(UINT* pIndex) {
-		UINT index = (*pIndex)++;
-
-		if (index < (UINT)m_ActiveWindows.size()){
-			return m_ActiveWindows[index].hWnd;
+	void CWindowProvider::FlagActiveWindow(HWND hWnd)
+	{
+		for (auto& wndTarget : m_ActiveWindows)
+		{
+			wndTarget.bActive = wndTarget.hWnd == hWnd;
 		}
-		else {
-			return NULL;
+		m_hLastActiveWindow = hWnd;
+	}
+
+	HWND CWindowProvider::HGetActiveWindow()
+	{
+		return m_hLastActiveWindow;
+	}
+
+
+	void CWindowProvider::QueryWindows(const SWindowTarget** ppWindowTargets, UINT* pCount)
+	{
+		*pCount = (UINT)m_ActiveWindows.size();
+		if (ppWindowTargets) {
+			*ppWindowTargets = m_ActiveWindows.data();
 		}
 	}
 }
