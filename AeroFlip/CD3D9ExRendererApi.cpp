@@ -31,6 +31,10 @@ namespace aeroflip
 		UINT width = 0;
 		UINT height = 0;
 		BOOL bUseRAMCache = (pTarget->bMinimized && pTarget->pCachedPixels != NULL);
+		if (pTarget->bMinimized) 
+		{
+			pTarget->pCachedPixels ? OutputDebugStringA("Minimised and HAS cache") : OutputDebugStringA("Minimised and CACHELESS");
+		}
 		// mip maps are super slow :/
 		const BOOL bMipMaps = FALSE;
 

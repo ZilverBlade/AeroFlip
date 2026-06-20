@@ -140,6 +140,7 @@ namespace aeroflip
 				if (newTarget.hWnd == oldTarget.hWnd)
 				{
 					newTarget.bNeedsUpdate = oldTarget.bNeedsUpdate;
+					newTarget.bMinimized = oldTarget.bMinimized;
 					newTarget.uCachedWidth = oldTarget.uCachedWidth;
 					newTarget.uCachedHeight = oldTarget.uCachedHeight;
 					newTarget.pCachedPixels = oldTarget.pCachedPixels;
@@ -148,6 +149,15 @@ namespace aeroflip
 					oldTarget.pCachedPixels = NULL;
 					break;
 				}
+			}
+		}
+
+		for (auto& oldTarget : oldWindows)
+		{
+			if (oldTarget.pCachedPixels != NULL)
+			{
+				free(oldTarget.pCachedPixels);
+				oldTarget.pCachedPixels = NULL;
 			}
 		}
 
@@ -254,9 +264,11 @@ namespace aeroflip
 				HDC hdcScreen = GetDC(NULL);
 				HDC hdcMem = CreateCompatibleDC(hdcScreen);
 				HBITMAP hBitmap = CreateCompatibleBitmap(hdcScreen, width, height);
-				HGDIOBJ hOld = SelectObject(hdcMem, hBitmap);
 
+				HGDIOBJ hOld = SelectObject(hdcMem, hBitmap);
 				PrintWindow(hWnd, hdcMem, 2);
+
+				SelectObject(hdcMem, hOld);
 
 				target.uCachedWidth = (UINT)width;
 				target.uCachedHeight = (UINT)height;
@@ -277,7 +289,6 @@ namespace aeroflip
 					GetDIBits(hdcMem, hBitmap, 0, height, target.pCachedPixels, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
 				}
 
-				SelectObject(hdcMem, hOld);
 				DeleteObject(hBitmap);
 				DeleteDC(hdcMem);
 				ReleaseDC(NULL, hdcScreen);

@@ -20,15 +20,15 @@
         ScopeTimer(const wchar_t* l) : label(l) { \
             QueryPerformanceFrequency(&freq); \
             QueryPerformanceCounter(&start); \
-																														        } \
+																																																														        } \
         ~ScopeTimer() { \
             QueryPerformanceCounter(&end); \
             double ms = (double)(end.QuadPart - start.QuadPart) * 1000.0 / (double)freq.QuadPart; \
             std::wstringstream ss; \
             ss << L"[PROFILE] " << label << L": " << ms << L" ms\n"; \
             OutputDebugStringW(ss.str().c_str()); \
-																														        } \
-															    } timer_##__LINE__(name)
+																																																														        } \
+																															    } timer_##__LINE__(name)
 
 #define MAX_LOADSTRING 100
 
@@ -404,15 +404,29 @@ void CALLBACK WinEventProc(
 {
 
 	UNREFERENCED_PARAMETER(hWinEventHook);
-	UNREFERENCED_PARAMETER(hWnd);
 	UNREFERENCED_PARAMETER(dwEventThread);
 	UNREFERENCED_PARAMETER(dwmsEventTime);
 
 	if (idObject != OBJID_WINDOW || idChild != CHILDID_SELF) return;
 
 	switch (event) {
+	case EVENT_SYSTEM_FOREGROUND:
+		if (g_pWindowProvider)
+		{
+			// Update immediately so cache can occur
+			g_pWindowProvider->UpdateWindowList();
+			if (!IsIconic(hWnd))
+			{
+				PROFILE_SCOPE(L"Cache Foreground Window");
+				g_pWindowProvider->CacheWindowThumbnail(hWnd);
+			}
+
+			g_pWindowProvider->FlagActiveWindow(hWnd);
+		}
+		break;
 	case EVENT_OBJECT_DESTROY:
 		g_bWindowListDirty = TRUE; // A window closed, we must rebuild the structure
+		g_pWindowProvider->ClearWindowCache(hWnd);
 		break;
 
 	case EVENT_SYSTEM_MOVESIZEEND:
@@ -428,10 +442,8 @@ void CALLBACK WinEventProc(
 		g_bWindowListDirty = TRUE;
 		if (g_pWindowProvider)
 		{
-			PROFILE_SCOPE(L"Cache Window Thumbnail");
+			PROFILE_SCOPE(L"Minimise Window");
 
-			g_pWindowProvider->CacheWindowThumbnail(hWnd);
-			g_pWindowProvider->InvalidateWindow(hWnd);
 			g_pWindowProvider->SetWindowMinimizedFlag(hWnd, TRUE);
 		}
 		break;
@@ -547,8 +559,7 @@ void InitializeWindowEventHook()
 		OutputDebugString(L"Failed to install Low-Level Keyboard Hook!\n");
 	}
 
-	g_hEventHook = SetWinEventHook(
-		EVENT_SYSTEM_MOVESIZESTART, EVENT_OBJECT_DESTROY,
+	g_hEventHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_OBJECT_DESTROY,
 		NULL, WinEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
 }
 
