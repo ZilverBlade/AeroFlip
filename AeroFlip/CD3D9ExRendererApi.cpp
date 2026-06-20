@@ -85,7 +85,7 @@ namespace aeroflip
 		{
 			SafeRelease(*ppTexture);
 
-			HRESULT hr = pDevice->CreateTexture(width, height, 1,
+			HRESULT hr = pDevice->CreateTexture(width, height, 0,
 				D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
 				ppTexture, NULL);
 
@@ -148,6 +148,8 @@ namespace aeroflip
 		}
 
 		(*ppTexture)->UnlockRect(0);
+
+		DEVICE_CALL(D3DXFilterTexture(*ppTexture, NULL, 0, D3DX_DEFAULT));
 
 		return S_OK;
 	}
@@ -352,6 +354,10 @@ namespace aeroflip
 					DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_WORLD, &matWorld));
 
 					DEVICE_CALL(m_pD3D9ExDevice->SetTexture(0, window.pD3D9Texture));
+					DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAXANISOTROPY, 7));
+					DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_ANISOTROPIC));
+					DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_ANISOTROPIC));
+					DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR));
 					DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));
 
 					DEVICE_CALL(m_pD3D9ExDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, g_QuadVertices, sizeof(SVertex3D)));

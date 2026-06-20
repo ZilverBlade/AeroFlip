@@ -200,7 +200,7 @@ void WakeAeroFlip(HWND hWnd)
 
 		rConfig.hWnd = hWnd;
 		rConfig.bHardwareAcceleration = TRUE;
-		rConfig.uMultiSampleLevel = 0;
+		rConfig.uMultiSampleLevel = 4;
 
 		g_pRenderer = new aeroflip::CD3D9ExRendererApi(&rConfig);
 
