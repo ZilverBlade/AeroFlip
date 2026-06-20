@@ -1,0 +1,16 @@
+ipch/
+Debug/
+Release/
+bin/
+AeroFlip.tlog/
+*.exe
+*.dll
+*.lib
+*.pch
+*.pdb
+*.idb
+*.obj
+*.opensdf
+*.user
+*.sdf
+*.suo
