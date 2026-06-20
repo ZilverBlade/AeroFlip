@@ -9,7 +9,7 @@
 #define MAX_LOADSTRING 100
 
 // Global Variables:
-HINSTANCE g_hst = NULL;								// current instance
+HINSTANCE g_hst = NULL;									// current instance
 TCHAR g_szTitle[MAX_LOADSTRING];						// The title bar text
 TCHAR g_szWindowClass[MAX_LOADSTRING];					// the main window class name
 HWINEVENTHOOK g_hEventHook = NULL;
@@ -39,6 +39,19 @@ int APIENTRY _tWinMain(
 {
 	UNREFERENCED_PARAMETER(hPrevInstance);
 	UNREFERENCED_PARAMETER(lpCmdLine);
+
+	(void)::CreateMutex(NULL,
+		TRUE,
+		TEXT("Zilverblade_Aero_Flip_App_Mtx"));
+	switch (::GetLastError()) {
+	case ERROR_SUCCESS:
+		// Process was not running already
+		break;
+	case ERROR_ALREADY_EXISTS:
+		return TRUE;
+	default:
+		return FALSE;
+	}
 
 	LoadString(hInstance, IDS_APP_TITLE, g_szTitle, MAX_LOADSTRING);
 	LoadString(hInstance, IDC_AEROFLIP, g_szWindowClass, MAX_LOADSTRING);
@@ -149,14 +162,14 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 	g_hst = hInstance;
 
 	HWND hWnd = CreateWindowEx(
-		WS_EX_TOPMOST | WS_EX_LAYERED, 
+		WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW,
 		g_szWindowClass,
 		g_szTitle,
 		WS_POPUP,
 		0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN),
 		NULL, NULL, hInstance, NULL
 		);
-
+	
 	if (!hWnd)
 	{
 		return FALSE;
@@ -208,8 +221,18 @@ void DismissAeroFlip(HWND hWnd, HWND hSelectedApp)
 	SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
 	if (hSelectedApp != NULL)
 	{
-		ShowWindow(hSelectedApp, SW_RESTORE);
-		SetForegroundWindow(hSelectedApp);
+		if (IsIconic(hSelectedApp))
+		{
+			ShowWindow(hSelectedApp, SW_RESTORE);
+		}
+		else
+		{
+			HWND hForeground = GetForegroundWindow();
+			if (hForeground != hSelectedApp)
+			{
+				SetForegroundWindow(hSelectedApp);
+			}
+		}
 	}
 }
 
