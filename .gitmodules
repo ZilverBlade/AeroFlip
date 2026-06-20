@@ -1,0 +1,3 @@
+[submodule "vendor/dxsdk"]
+	path = vendor/dxsdk
+	url = https://github.com/apitrace/dxsdk.git

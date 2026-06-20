@@ -20,10 +20,10 @@
 #include <memory.h>
 #include <tchar.h>
 
-#define SafeRelease(pInterface) \
-    if (pInterface != NULL) { \
-        pInterface->Release(); \
-        pInterface = NULL; \
+#define SafeRelease(interface) \
+    if ((interface) != NULL) { \
+        (interface)->Release(); \
+        (interface) = NULL; \
     }
 
 // C++ standard libraries

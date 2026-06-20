@@ -33,6 +33,12 @@
     <ClInclude Include="CRendererApi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="CWindowProvider.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SWindowTarget.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -42,6 +48,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="CRendererApi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CWindowProvider.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
