@@ -4,6 +4,8 @@
 #include "stdafx.h"
 #include "AeroFlip.h"
 #include "CRendererApi.h" 
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
 
 #define MAX_LOADSTRING 100
 
@@ -14,9 +16,10 @@ TCHAR g_szWindowClass[MAX_LOADSTRING];			// the main window class name
 aeroflip::CRendererApi* g_pRenderer = NULL;		// D3D9 renderer
 
 // Forward declarations of functions included in this code module:
-ATOM				MyRegisterClass(HINSTANCE hInstance);
+ATOM				MyRegisterClass(HINSTANCE);
 BOOL				InitInstance(HINSTANCE, int);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
+void				MakeWindowTransparent(HWND);
 
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
 	_In_opt_ HINSTANCE hPrevInstance,
@@ -52,6 +55,7 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
 	}
 	catch (std::exception ex) {
 		OutputDebugStringA(ex.what());
+		OutputDebugStringA("\n");
 		return FALSE;
 	}
 
@@ -68,10 +72,20 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
 		}
 		else
 		{
-			g_pRenderer->OnRender();
+			try {
+				g_pRenderer->OnRender();
+			}
+			catch (std::exception ex) {
+				OutputDebugStringA(ex.what());
+				OutputDebugStringA("\n");
+				msg.message = WM_QUIT;
+				msg.wParam = 1;
+			}
 		}
 	}
 
+	delete g_pRenderer;
+	g_pRenderer = NULL;
 	return (int)msg.wParam;
 }
 
@@ -98,13 +112,21 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 }
 
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
-	UNREFERENCED_PARAMETER(hInstance);
-	BOOL bResult = TRUE;
-	if (nCmdShow) {
-		HWND hConsoleWnd = GetConsoleWindow();
-		ShowWindow(hConsoleWnd, nCmdShow);
+	g_hInst = hInstance;
+
+	HWND hWnd = CreateWindow(g_szWindowClass, g_szTitle, WS_OVERLAPPEDWINDOW,
+		CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, hInstance, NULL);
+
+	if (!hWnd)
+	{
+		return FALSE;
 	}
-	return bResult;
+
+	ShowWindow(hWnd, nCmdShow);
+	MakeWindowTransparent(hWnd);
+	UpdateWindow(hWnd);
+
+	return TRUE;
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -133,4 +155,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		return DefWindowProc(hWnd, message, wParam, lParam);
 	}
 	return 0;
+}
+
+void MakeWindowTransparent(HWND hWnd) {
+	SetWindowLong(hWnd, GWL_EXSTYLE, GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
+	SetLayeredWindowAttributes(hWnd, RGB(0, 0, 0), 0, LWA_COLORKEY);
 }

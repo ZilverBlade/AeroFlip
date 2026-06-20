@@ -22,9 +22,13 @@ namespace aeroflip {
 		UINT USelectD3D9HardwareAdapter(D3DDEVTYPE* pOutDevType);
 		UINT USelectD3D9SoftwareAdapter(D3DDEVTYPE* pOutDevType);
 
+		void ResetD3D9Device();
+
 		IDirect3D9Ex* m_pD3D9 = NULL;			
 		IDirect3DDevice9Ex* m_pD3D9Device = NULL;	
 
 		D3DPRESENT_PARAMETERS m_D3D9PresentParams;
+
+		HWND m_hWindow = NULL;
 	};
 }
