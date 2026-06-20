@@ -21,31 +21,49 @@ namespace aeroflip
 #define D3DFVF_VERTEX3D (D3DFVF_XYZ | D3DFVF_TEX1)
 
 	SVertex3D g_QuadVertices[] = {
-		{ -1.5f, 1.0f, 0.0f, 0.0f, 0.0f }, // Top Left
-		{ 1.5f, 1.0f, 0.0f, 1.0f, 0.0f }, // Top Right
-		{ -1.5f, -1.0f, 0.0f, 0.0f, 1.0f }, // Bottom Left
-		{ 1.5f, -1.0f, 0.0f, 1.0f, 1.0f }, // Bottom Right
+		{ -1.0f, 1.0f, 0.0f, 0.0f, 0.0f }, // Top Left
+		{ 1.0f, 1.0f, 0.0f, 1.0f, 0.0f }, // Top Right
+		{ -1.0f, -1.0f, 0.0f, 0.0f, 1.0f }, // Bottom Left
+		{ 1.0f, -1.0f, 0.0f, 1.0f, 1.0f }, // Bottom Right
 	};
 
-	HRESULT CaptureWindowToTexture(HWND hTargetWnd, IDirect3DDevice9Ex* pDevice, IDirect3DTexture9** ppTexture) {
-		RECT rect;
-		GetWindowRect(hTargetWnd, &rect);
-		int width = rect.right - rect.left;
-		int height = rect.bottom - rect.top;
-		if (width <= 0 || height <= 0)
+	HRESULT CaptureWindowToTexture(const SWindowTarget* pTarget, IDirect3DDevice9Ex* pDevice, IDirect3DTexture9** ppTexture)
+	{
+		HWND hTargetWnd = pTarget->hWnd;
+		UINT width = 0;
+		UINT height = 0;
+		BOOL bUseRAMCache = (pTarget->bMinimized && pTarget->pCachedPixels != NULL);
+
+		if (bUseRAMCache)
 		{
-			return E_FAIL;
+			width = pTarget->uCachedWidth;
+			height = pTarget->uCachedHeight;
+		}
+		else
+		{
+			if (IsIconic(hTargetWnd))
+			{
+				WINDOWPLACEMENT wp;
+				wp.length = sizeof(WINDOWPLACEMENT);
+				GetWindowPlacement(hTargetWnd, &wp);
+				width = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+				height = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+			}
+			else
+			{
+				RECT rect;
+				GetWindowRect(hTargetWnd, &rect);
+				width = rect.right - rect.left;
+				height = rect.bottom - rect.top;
+			}
+
+			if (width <= 0 || height <= 0)
+			{
+				return E_FAIL;
+			}
 		}
 
-		HDC hdcScreen = GetDC(NULL);
-		HDC hdcMem = CreateCompatibleDC(hdcScreen);
-		HBITMAP hBitmap = CreateCompatibleBitmap(hdcScreen, width, height);
-		HGDIOBJ hOld = SelectObject(hdcMem, hBitmap);
-
-		PrintWindow(hTargetWnd, hdcMem, 2);
-
 		BOOL bRecreateTexture = FALSE;
-
 		if (*ppTexture == NULL)
 		{
 			bRecreateTexture = TRUE;
@@ -57,32 +75,79 @@ namespace aeroflip
 			{
 				bRecreateTexture = TRUE;
 			}
-			bRecreateTexture = desc.Width != (UINT)width || desc.Height != (UINT)height;
-		}
-		if (bRecreateTexture)
-		{
-			SafeRelease(*ppTexture);
-			HRESULT hr = pDevice->CreateTexture(width, height, 1,
-				D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
-				ppTexture, NULL);
-			if (FAILED(hr))
+			else
 			{
-				return hr;
+				bRecreateTexture = (desc.Width != width || desc.Height != height);
 			}
 		}
 
-		D3DLOCKED_RECT lockedRect;
-		if (SUCCEEDED((*ppTexture)->LockRect(0, &lockedRect, NULL, D3DLOCK_DISCARD)))
+		if (bRecreateTexture)
 		{
-			BITMAPINFOHEADER bi = { sizeof(BITMAPINFOHEADER), width, -height, 1, 32, BI_RGB };
-			GetDIBits(hdcMem, hBitmap, 0, height, lockedRect.pBits, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
-			(*ppTexture)->UnlockRect(0);
+			SafeRelease(*ppTexture);
+
+			HRESULT hr = pDevice->CreateTexture(width, height, 1,
+				D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
+				ppTexture, NULL);
+
+			if (FAILED(hr)) return hr;
 		}
 
-		SelectObject(hdcMem, hOld);
-		DeleteObject(hBitmap);
-		DeleteDC(hdcMem);
-		ReleaseDC(NULL, hdcScreen);
+		D3DLOCKED_RECT lockedRect;
+		if (FAILED((*ppTexture)->LockRect(0, &lockedRect, NULL, D3DLOCK_DISCARD)))
+		{
+			return E_FAIL;
+		}
+
+		int rowBytes = width * 4;
+		BYTE* pDest = (BYTE*)lockedRect.pBits;
+
+		if (bUseRAMCache)
+		{
+			BYTE* pSrc = pTarget->pCachedPixels;
+
+			for (UINT y = 0; y < height; ++y)
+			{
+				memcpy(pDest, pSrc, rowBytes);
+				pDest += lockedRect.Pitch;
+				pSrc += rowBytes;
+			}
+		}
+		else
+		{
+			HDC hdcScreen = GetDC(NULL);
+			HDC hdcMem = CreateCompatibleDC(hdcScreen);
+			HBITMAP hBitmap = CreateCompatibleBitmap(hdcScreen, width, height);
+			HGDIOBJ hOld = SelectObject(hdcMem, hBitmap);
+
+			PrintWindow(hTargetWnd, hdcMem, 2);
+
+			BITMAPINFOHEADER bi = { sizeof(BITMAPINFOHEADER), width, -(LONG)height, 1, 32, BI_RGB };
+
+			if (lockedRect.Pitch == rowBytes)
+			{
+				GetDIBits(hdcMem, hBitmap, 0, height, lockedRect.pBits, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+			}
+			else
+			{
+				std::vector<BYTE> tempPixels(rowBytes * height);
+				GetDIBits(hdcMem, hBitmap, 0, height, tempPixels.data(), (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+
+				BYTE* pSrc = tempPixels.data();
+				for (UINT y = 0; y < height; ++y)
+				{
+					memcpy(pDest, pSrc, rowBytes);
+					pDest += lockedRect.Pitch;
+					pSrc += rowBytes;
+				}
+			}
+
+			SelectObject(hdcMem, hOld);
+			DeleteObject(hBitmap);
+			DeleteDC(hdcMem);
+			ReleaseDC(NULL, hdcScreen);
+		}
+
+		(*ppTexture)->UnlockRect(0);
 
 		return S_OK;
 	}
@@ -130,14 +195,11 @@ namespace aeroflip
 			HWND hTargetWnd = pTarget->hWnd;
 
 			auto it = m_WindowTextureList.begin();
-			if (!m_WindowTextureList.empty()) 
+			if (!m_WindowTextureList.empty())
 			{
 				while (it != m_WindowTextureList.end())
 				{
-					if (it->hWnd == hTargetWnd)
-					{
-						break;
-					}
+					if (it->hWnd == hTargetWnd) break;
 					++it;
 				}
 			}
@@ -157,11 +219,19 @@ namespace aeroflip
 				pTexturePair = &*it;
 			}
 
-			CaptureWindowToTexture(hTargetWnd, m_pD3D9ExDevice, &pTexturePair->pD3D9Texture);
+			if (pTarget->bNeedsUpdate)
+			{
+				if (SUCCEEDED(CaptureWindowToTexture(pTarget, m_pD3D9ExDevice, &pTexturePair->pD3D9Texture)))
+				{
+					pWindowProvider->MarkWindowUpdated(hTargetWnd);
+				}
+			}
+
 			pTexturePair->bIsFocused = pTarget->bActive;
-			pTexturePair->uIndex = pTarget->uWindowZOrder;
+			pTexturePair->uIndex = uIndex;
 			remainingWindows.push_back(hTargetWnd);
 		}
+
 		for (auto it = m_WindowTextureList.begin(); it != m_WindowTextureList.end(); ++it)
 		{
 			BOOL bPersists = FALSE;
@@ -186,7 +256,7 @@ namespace aeroflip
 		});
 	}
 
-	void CD3D9ExRendererApi::ReleaseWindows() 
+	void CD3D9ExRendererApi::ReleaseWindows()
 	{
 		for (auto& texture : m_WindowTextureList)
 		{
@@ -216,7 +286,7 @@ namespace aeroflip
 		}
 
 		// chroma clear
-		D3DCOLOR clearColor = D3DCOLOR_ARGB(0, 0, 255, 255);
+		D3DCOLOR clearColor = D3DCOLOR_ARGB(0, 255, 0, 255);
 		m_pD3D9ExDevice->Clear(0, NULL, D3DCLEAR_TARGET, clearColor, 1.0f, 0);
 
 		if (SUCCEEDED(m_pD3D9ExDevice->BeginScene()))
@@ -224,45 +294,68 @@ namespace aeroflip
 			DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE));
 			DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA));
 			DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA));
+			DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_LIGHTING, FALSE));
 
-			FLOAT fOffsetX = 0.0f;
-			FLOAT fOffsetY = 0.0f;
+			// Turn off culling so we can see the textures even when angled steeply
+			DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE));
 
-			for (const auto& window : m_WindowTextureList)
+			int numWindows = (int)m_WindowTextureList.size();
+
+			if (numWindows > 0)
 			{
-				if (window.pD3D9Texture == NULL)
+				int activeIndex = 0;
+				for (int i = 0; i < numWindows; ++i)
 				{
-					continue;
+					if (m_WindowTextureList[i].bIsFocused)
+					{
+						activeIndex = i;
+						break;
+					}
 				}
-				D3DXMATRIX matProj;
+
+				D3DXMATRIX matProj, matView;
 				D3DXMatrixPerspectiveFovLH(&matProj, D3DXToRadian(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
 				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_PROJECTION, &matProj));
 
-				D3DXMATRIX matView;
 				D3DXVECTOR3 origin(0.0f, 0.0f, -5.0f);
 				D3DXVECTOR3 target(0.0f, 0.0f, 0.0f);
 				D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
-				D3DXMatrixLookAtLH(&matView,
-					&origin,
-					&target,
-					&up);
+				D3DXMatrixLookAtLH(&matView, &origin, &target, &up);
 				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));
 
-				D3DXMATRIX matRotY, matTranslate, matWorld;
-				D3DXMatrixRotationY(&matRotY, D3DXToRadian(-60.0f));
-				D3DXMatrixTranslation(&matTranslate, -0.5f + fOffsetX, 0.0f + fOffsetY, 2.0f);
-				matWorld = matRotY * matTranslate;
-				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_WORLD, &matWorld));
+				int maxWindowsToShow = min(10, numWindows);
 
-				DEVICE_CALL(m_pD3D9ExDevice->SetTexture(0, window.pD3D9Texture));
-				DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));
+				for (int i = maxWindowsToShow - 1; i >= 0; --i)
+				{
+					int targetIndex = (activeIndex + i) % numWindows;
+					const auto& window = m_WindowTextureList[targetIndex];
 
-				DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_LIGHTING, FALSE));
+					if (window.pD3D9Texture == NULL) continue;
 
-				DEVICE_CALL(m_pD3D9ExDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, g_QuadVertices, sizeof(SVertex3D)));
+					D3DSURFACE_DESC desc;
+					window.pD3D9Texture->GetLevelDesc(0, &desc);
+					float aspect = (float)desc.Width / (float)desc.Height;
 
-				fOffsetX += 0.05f;
-				fOffsetY += 0.05f;
+					float fRotY = -50.0f; // Tilt the right side towards the camera
+
+					float fOffsetX = 1.0f - (i * 1.2f);
+					float fOffsetY = -0.2f + (i * 0.2f);
+					float fOffsetZ = 3.0f + (i * 1.5f);
+
+					D3DXMATRIX matScale, matRotY, matTranslate, matWorld;
+
+					D3DXMatrixScaling(&matScale, aspect * 1.2f, 1.2f, 1.0f);
+					D3DXMatrixRotationY(&matRotY, D3DXToRadian(fRotY));
+					D3DXMatrixTranslation(&matTranslate, fOffsetX, fOffsetY, fOffsetZ);
+
+					matWorld = matScale * matRotY * matTranslate;
+					DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_WORLD, &matWorld));
+
+					DEVICE_CALL(m_pD3D9ExDevice->SetTexture(0, window.pD3D9Texture));
+					DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));
+
+					DEVICE_CALL(m_pD3D9ExDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, g_QuadVertices, sizeof(SVertex3D)));
+				}
 			}
 
 			DEVICE_CALL(m_pD3D9ExDevice->EndScene());

@@ -23,8 +23,22 @@ namespace aeroflip
 		void UpdateWindowList();
 		void FlagActiveWindow(HWND hWnd);
 		HWND HGetActiveWindow();
+		void SetWindowMinimizedFlag(HWND hWnd, BOOL bMinimized);
+
+		void InvalidateWindow(HWND hWnd);
+		void MarkWindowUpdated(HWND hWnd);
+		void ClearWindowCache(HWND hWnd);
+		void InvalidateAllWindows();
+
 		void QueryWindows(const SWindowTarget** ppWindowTargets, UINT* pCount);
+
+		void CacheWindowThumbnail(HWND hWnd);
+
+		BOOL BWindowHasCache(HWND hWnd);
+
 	private:
+		void ClearWindowList();
+
 		std::vector<SWindowTarget> m_ActiveWindows;
 
 		HWND m_hLastActiveWindow = NULL;

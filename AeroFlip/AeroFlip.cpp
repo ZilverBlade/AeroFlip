@@ -16,7 +16,7 @@ HWINEVENTHOOK g_hEventHook = NULL;
 HHOOK g_hKeyboardHook = NULL;
 aeroflip::IRendererApi* g_pRenderer = NULL;				// Windowing renderer
 aeroflip::CWindowProvider* g_pWindowProvider = NULL;	// DWMAPI Provider
-BOOL g_bWindowDirty = TRUE;
+BOOL g_bWindowListDirty = TRUE;
 
 // Forward declarations of functions included in this code module:
 ATOM				MyRegisterClass(HINSTANCE);
@@ -69,6 +69,8 @@ int APIENTRY _tWinMain(
 		wConfig.szAppWindowClass = g_szWindowClass;
 
 		g_pWindowProvider = new aeroflip::CWindowProvider(&wConfig);
+
+		g_pWindowProvider->UpdateWindowList();
 	}
 
 	InitializeWindowEventHook();
@@ -108,15 +110,13 @@ int APIENTRY _tWinMain(
 					continue;
 				}
 
-				if (g_bWindowDirty)
+				if (g_bWindowListDirty)
 				{
 					g_pWindowProvider->UpdateWindowList();
-					if (g_pRenderer) {
-						g_pRenderer->UpdateWindows(g_pWindowProvider);
-					}
-					g_bWindowDirty = FALSE;
+					g_bWindowListDirty = FALSE;
 				}
 				if (g_pRenderer) {
+					g_pRenderer->UpdateWindows(g_pWindowProvider);
 					g_pRenderer->OnRender(0.0f);
 				}
 			}
@@ -169,7 +169,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 		0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN),
 		NULL, NULL, hInstance, NULL
 		);
-	
+
 	if (!hWnd)
 	{
 		return FALSE;
@@ -201,10 +201,15 @@ void WakeAeroFlip(HWND hWnd)
 		rConfig.uMultiSampleLevel = 0;
 
 		g_pRenderer = new aeroflip::CD3D9ExRendererApi(&rConfig);
+
+		if (g_pWindowProvider)
+		{
+			g_pWindowProvider->InvalidateAllWindows();
+		}
 	}
-	g_bWindowDirty = TRUE; // Force an immediate refresh of the window targets
+	g_bWindowListDirty = TRUE; // Force an immediate refresh of the window targets
 	ShowWindow(hWnd, SW_SHOW);
-	SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+	SetWindowPos(hWnd, NULL /*HWND_TOPMOST*/, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
 	SetForegroundWindow(hWnd);
 }
 
@@ -212,7 +217,7 @@ void DismissAeroFlip(HWND hWnd, HWND hSelectedApp)
 {
 	ShowWindow(hWnd, SW_HIDE);
 	// reduce memory usage when dismissed
-	if (g_pRenderer != NULL) 
+	if (g_pRenderer != NULL)
 	{
 		delete g_pRenderer;
 		g_pRenderer = NULL;
@@ -267,7 +272,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 void MakeWindowTransparent(HWND hWnd)
 {
 	SetWindowLong(hWnd, GWL_EXSTYLE, GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
-	SetLayeredWindowAttributes(hWnd, RGB(0, 255, 255), 0, LWA_COLORKEY);
+	SetLayeredWindowAttributes(hWnd, RGB(255, 0, 255), 0, LWA_COLORKEY);
 }
 
 void CALLBACK WinEventProc(
@@ -289,30 +294,35 @@ void CALLBACK WinEventProc(
 
 	switch (event) {
 	case EVENT_OBJECT_DESTROY:
-	{
-		OutputDebugString(L"A window was closed. Refreshing deck list.\n");
-		g_bWindowDirty = TRUE;
+		g_bWindowListDirty = TRUE; // A window closed, we must rebuild the structure
 		break;
-	}
 
 	case EVENT_SYSTEM_MOVESIZEEND:
-	{
-		OutputDebugString(L"A window was resized/moved. Updating target texture.\n");
-		g_bWindowDirty = TRUE;
+		g_bWindowListDirty = TRUE;
+		if (g_pWindowProvider)
+		{
+			g_pWindowProvider->InvalidateWindow(hWnd); 
+		}
 		break;
-	}
 
 	case EVENT_SYSTEM_MINIMIZESTART:
-	{
+		g_bWindowListDirty = TRUE;
+		if (g_pWindowProvider)
+		{
+			g_pWindowProvider->CacheWindowThumbnail(hWnd);
+			g_pWindowProvider->InvalidateWindow(hWnd);
+			g_pWindowProvider->SetWindowMinimizedFlag(hWnd, TRUE);
+		}
 		break;
-	}
 
 	case EVENT_SYSTEM_MINIMIZEEND:
-	{
-		OutputDebugString(L"A window was restored. Updating target texture.\n");
-		g_bWindowDirty = TRUE;
+		g_bWindowListDirty = TRUE;
+		if (g_pWindowProvider) 
+		{
+			g_pWindowProvider->InvalidateWindow(hWnd);
+			g_pWindowProvider->SetWindowMinimizedFlag(hWnd, FALSE);
+		}
 		break;
-	}
 	}
 }
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
@@ -333,7 +343,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 
 					if (!IsWindowVisible(hWnd))
 					{
-						g_pWindowProvider->UpdateWindowList();
+						g_bWindowListDirty = TRUE;
 
 						HWND hLastActiveWindow = GetForegroundWindow();
 						if (hLastActiveWindow != hWnd)
@@ -347,7 +357,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 					{
 						if (g_pWindowProvider)
 						{
-							g_bWindowDirty = TRUE;
+							g_bWindowListDirty = TRUE;
 						}
 					}
 

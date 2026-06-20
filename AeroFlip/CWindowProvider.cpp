@@ -26,6 +26,7 @@ namespace aeroflip
 
 	struct SEnumContext
 	{
+		CWindowProvider* pThis;
 		std::vector<SWindowTarget>* pList;
 		const WCHAR* szIgnoreClass;
 	};
@@ -42,15 +43,17 @@ namespace aeroflip
 			ZeroMemory(&target, sizeof(SWindowTarget));
 			target.bDesktopWindow = TRUE;
 			target.hWnd = hWnd;
+			target.bNeedsUpdate = TRUE;
 			wcscpy_s(target.szTitle, L"Desktop");
 			pContext->pList->push_back(target);
 			return TRUE;
 		}
 
-		if (!IsWindowVisible(hWnd))
+		if (!IsWindowVisible(hWnd) || !IsWindowEnabled(hWnd))
 		{
 			return TRUE;
 		}
+
 		if (IsWindows8OrGreater())
 		{
 			int cloaked = 0;
@@ -67,13 +70,17 @@ namespace aeroflip
 		}
 
 		HWND hOwner = GetWindow(hWnd, GW_OWNER);
-		if (hOwner != NULL) return TRUE;
-
+		if (hOwner != NULL)
+		{
+			return TRUE;
+		}
 		WCHAR szTitle[256];
 		ZeroMemory(szTitle, sizeof(szTitle));
 		GetWindowText(hWnd, szTitle, 256);
-		if (wcslen(szTitle) == 0) return TRUE;
-
+		if (wcslen(szTitle) == 0)
+		{
+			return TRUE;
+		}
 		WCHAR szClassName[256];
 		ZeroMemory(szClassName, sizeof(szClassName));
 		GetClassName(hWnd, szClassName, 256);
@@ -92,6 +99,8 @@ namespace aeroflip
 		ZeroMemory(&target, sizeof(SWindowTarget));
 		target.hWnd = hWnd;
 		wcscpy_s(target.szTitle, szTitle);
+		target.bMinimized = IsIconic(hWnd);
+		target.bNeedsUpdate = TRUE;
 		pContext->pList->push_back(target);
 
 		return TRUE;
@@ -104,16 +113,43 @@ namespace aeroflip
 
 	CWindowProvider::~CWindowProvider()
 	{
+		for (auto& wndTarget : m_ActiveWindows)
+		{
+			if (wndTarget.pCachedPixels)
+			{
+				free(wndTarget.pCachedPixels);
+			}
+		}
 	}
 
 	void CWindowProvider::UpdateWindowList()
 	{
+		std::vector<SWindowTarget> oldWindows = m_ActiveWindows;
 		m_ActiveWindows.clear();
 
 		SEnumContext context;
+		context.pThis = this;
 		context.pList = &m_ActiveWindows;
 		context.szIgnoreClass = m_szAppWindowClass;
 		EnumWindows(EnumWindowsProc, (LPARAM)&context);
+
+		for (auto& newTarget : m_ActiveWindows)
+		{
+			for (auto& oldTarget : oldWindows)
+			{
+				if (newTarget.hWnd == oldTarget.hWnd)
+				{
+					newTarget.bNeedsUpdate = oldTarget.bNeedsUpdate;
+					newTarget.uCachedWidth = oldTarget.uCachedWidth;
+					newTarget.uCachedHeight = oldTarget.uCachedHeight;
+					newTarget.pCachedPixels = oldTarget.pCachedPixels;
+					newTarget.cbCachedPixels = oldTarget.cbCachedPixels;
+
+					oldTarget.pCachedPixels = NULL;
+					break;
+				}
+			}
+		}
 
 		FlagActiveWindow(m_hLastActiveWindow);
 	}
@@ -132,12 +168,144 @@ namespace aeroflip
 		return m_hLastActiveWindow;
 	}
 
+	void CWindowProvider::SetWindowMinimizedFlag(HWND hWnd, BOOL bMinimized)
+	{
+		for (auto& target : m_ActiveWindows)
+		{
+			if (target.hWnd == hWnd)
+			{
+				target.bMinimized = bMinimized;
+				break;
+			}
+		}
+	}
+
+	void CWindowProvider::InvalidateWindow(HWND hWnd)
+	{
+		for (auto& target : m_ActiveWindows)
+		{
+			if (target.hWnd == hWnd)
+			{
+				target.bNeedsUpdate = TRUE;
+				break;
+			}
+		}
+	}
+
+	void CWindowProvider::MarkWindowUpdated(HWND hWnd)
+	{
+		for (auto& target : m_ActiveWindows)
+		{
+			if (target.hWnd == hWnd)
+			{
+				target.bNeedsUpdate = FALSE;
+				break;
+			}
+		}
+	}
+
+	void CWindowProvider::ClearWindowCache(HWND hWnd)
+	{
+		for (auto& target : m_ActiveWindows)
+		{
+			if (target.hWnd == hWnd)
+			{
+				if (target.pCachedPixels)
+				{
+					free(target.pCachedPixels);
+					target.pCachedPixels = NULL;
+				}
+				target.bMinimized = FALSE;
+				break;
+			}
+		}
+	}
+
+	void CWindowProvider::InvalidateAllWindows()
+	{
+		for (auto& target : m_ActiveWindows)
+		{
+			target.bNeedsUpdate = TRUE;
+		}
+	}
 
 	void CWindowProvider::QueryWindows(const SWindowTarget** ppWindowTargets, UINT* pCount)
 	{
 		*pCount = (UINT)m_ActiveWindows.size();
-		if (ppWindowTargets) {
-			*ppWindowTargets = m_ActiveWindows.data();
+		if (ppWindowTargets) *ppWindowTargets = m_ActiveWindows.data();
+	}
+
+
+	void CWindowProvider::CacheWindowThumbnail(HWND hWnd)
+	{
+		for (auto& target : m_ActiveWindows)
+		{
+			if (target.hWnd == hWnd)
+			{
+				WINDOWPLACEMENT wp;
+				wp.length = sizeof(WINDOWPLACEMENT);
+				GetWindowPlacement(hWnd, &wp);
+
+				int width = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+				int height = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+
+				if (width <= 0 || height <= 0) return;
+
+				HDC hdcScreen = GetDC(NULL);
+				HDC hdcMem = CreateCompatibleDC(hdcScreen);
+				HBITMAP hBitmap = CreateCompatibleBitmap(hdcScreen, width, height);
+				HGDIOBJ hOld = SelectObject(hdcMem, hBitmap);
+
+				PrintWindow(hWnd, hdcMem, 2);
+
+				target.uCachedWidth = (UINT)width;
+				target.uCachedHeight = (UINT)height;
+
+				int rowBytes = width * 4;
+				UINT newSize = (UINT)rowBytes * height;
+
+				if (target.cbCachedPixels != newSize || target.pCachedPixels == NULL)
+				{
+					if (target.pCachedPixels) free(target.pCachedPixels);
+					target.pCachedPixels = (BYTE*)malloc(newSize);
+					target.cbCachedPixels = newSize;
+				}
+
+				if (target.pCachedPixels)
+				{
+					BITMAPINFOHEADER bi = { sizeof(BITMAPINFOHEADER), width, -height, 1, 32, BI_RGB };
+					GetDIBits(hdcMem, hBitmap, 0, height, target.pCachedPixels, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+				}
+
+				SelectObject(hdcMem, hOld);
+				DeleteObject(hBitmap);
+				DeleteDC(hdcMem);
+				ReleaseDC(NULL, hdcScreen);
+				break;
+			}
+		}
+	}
+
+	BOOL CWindowProvider::BWindowHasCache(HWND hWnd)
+	{
+		for (auto& target : m_ActiveWindows)
+		{
+			if (target.hWnd == hWnd)
+			{
+				return target.pCachedPixels != NULL;
+			}
+		}
+		return FALSE;
+	}
+
+	void CWindowProvider::ClearWindowList()
+	{
+		for (auto& target : m_ActiveWindows)
+		{
+			if (target.pCachedPixels)
+			{
+				free(target.pCachedPixels);
+			}
 		}
 	}
 }

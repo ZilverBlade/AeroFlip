@@ -12,5 +12,13 @@ namespace aeroflip
 		HWND hWnd;
 		UINT uWindowZOrder;
 		WCHAR szTitle[256];
+
+		BOOL bMinimized;
+		UINT uCachedWidth;
+		UINT uCachedHeight;
+		BYTE* pCachedPixels;
+		UINT cbCachedPixels;
+
+		BOOL bNeedsUpdate;
 	};
 }
