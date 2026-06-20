@@ -10,6 +10,9 @@ Global
 		Debug|ARM = Debug|ARM
 		Debug|Win32 = Debug|Win32
 		Debug|x64 = Debug|x64
+		Deploy|ARM = Deploy|ARM
+		Deploy|Win32 = Deploy|Win32
+		Deploy|x64 = Deploy|x64
 		Release|ARM = Release|ARM
 		Release|Win32 = Release|Win32
 		Release|x64 = Release|x64
@@ -21,6 +24,12 @@ Global
 		{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}.Debug|Win32.Build.0 = Debug|Win32
 		{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}.Debug|x64.ActiveCfg = Debug|x64
 		{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}.Debug|x64.Build.0 = Debug|x64
+		{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}.Deploy|ARM.ActiveCfg = Deploy|ARM
+		{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}.Deploy|ARM.Build.0 = Deploy|ARM
+		{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}.Deploy|Win32.ActiveCfg = Deploy|Win32
+		{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}.Deploy|Win32.Build.0 = Deploy|Win32
+		{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}.Deploy|x64.ActiveCfg = Deploy|x64
+		{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}.Deploy|x64.Build.0 = Deploy|x64
 		{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}.Release|ARM.ActiveCfg = Release|ARM
 		{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}.Release|ARM.Build.0 = Release|ARM
 		{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}.Release|Win32.ActiveCfg = Release|Win32

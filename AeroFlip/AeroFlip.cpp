@@ -3,10 +3,31 @@
 
 #include "stdafx.h"
 #include "AeroFlip.h"
+#include "SWindowDrawObject.h"
 #include "CD3D9ExRendererApi.h" 
 #include "CWindowProvider.h" 
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
+
+#include <algorithm>
+#include <sstream>
+
+#define PROFILE_SCOPE(name) \
+    struct ScopeTimer { \
+        LARGE_INTEGER start, end, freq; \
+        const wchar_t* label; \
+        ScopeTimer(const wchar_t* l) : label(l) { \
+            QueryPerformanceFrequency(&freq); \
+            QueryPerformanceCounter(&start); \
+		        } \
+        ~ScopeTimer() { \
+            QueryPerformanceCounter(&end); \
+            double ms = (double)(end.QuadPart - start.QuadPart) * 1000.0 / (double)freq.QuadPart; \
+            std::wstringstream ss; \
+            ss << L"[PROFILE] " << label << L": " << ms << L" ms\n"; \
+            OutputDebugStringW(ss.str().c_str()); \
+		        } \
+	    } timer_##__LINE__(name)
 
 #define MAX_LOADSTRING 100
 
@@ -18,7 +39,13 @@ HWINEVENTHOOK g_hEventHook = NULL;
 HHOOK g_hKeyboardHook = NULL;
 aeroflip::IRendererApi* g_pRenderer = NULL;				// Windowing renderer
 aeroflip::CWindowProvider* g_pWindowProvider = NULL;	// DWMAPI Provider
-BOOL g_bWindowListDirty = TRUE;
+
+// Global State Variables:
+BOOL g_bWindowListDirty = TRUE;							// Tracks if the window list needs updating
+UINT g_uActiveIndex = 0;									// Tracks which window index is front and center
+LARGE_INTEGER g_liLastTime = { 0 };						// Stores the previous frame timestamp
+double g_dFreq = 0.0;									// QPC Clock Frequency scalar
+std::vector<aeroflip::SWindowDrawObject> g_DrawObjects;
 
 // Forward declarations of functions included in this code module:
 ATOM				MyRegisterClass(HINSTANCE);
@@ -29,6 +56,7 @@ LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 void CALLBACK		WinEventProc(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD);
 LRESULT CALLBACK	LowLevelKeyboardProc(int, WPARAM, LPARAM);
 
+void				UpdateWindowAnimations(FLOAT);
 void				MakeWindowTransparent(HWND);
 void				InitializeWindowEventHook();
 void				CleanupWindowEventHook();
@@ -74,8 +102,23 @@ int APIENTRY _tWinMain(
 
 		g_pWindowProvider->UpdateWindowList();
 	}
+	{
+		aeroflip::SD3D9ExRendererApiConfig rConfig;
+		ZeroMemory(&rConfig, sizeof(aeroflip::SD3D9ExRendererApiConfig));
+
+		rConfig.hWnd = hWnd;
+		rConfig.bHardwareAcceleration = TRUE;
+		rConfig.uMultiSampleLevel = 4;
+
+		g_pRenderer = new aeroflip::CD3D9ExRendererApi(&rConfig);
+	}
 
 	InitializeWindowEventHook();
+
+	LARGE_INTEGER liFreq;
+	QueryPerformanceFrequency(&liFreq);
+	g_dFreq = 1.0 / double(liFreq.QuadPart);
+	QueryPerformanceCounter(&g_liLastTime);
 
 	MSG msg;
 	ZeroMemory(&msg, sizeof(MSG));
@@ -96,6 +139,8 @@ int APIENTRY _tWinMain(
 				{
 					g_pWindowProvider->FlagActiveWindow(hLastActiveWindow);
 				}
+
+				g_uActiveIndex = 0;
 				WakeAeroFlip(hWnd);
 			}
 		}
@@ -107,23 +152,96 @@ int APIENTRY _tWinMain(
 
 				if (!bAltHeld)
 				{
-					DismissAeroFlip(hWnd, g_pWindowProvider->HGetActiveWindow());
-					GetAsyncKeyState(VK_MENU);
+					HWND hTargetApp = NULL;
+					if (!g_DrawObjects.empty() && g_uActiveIndex < (UINT)g_DrawObjects.size())
+					{
+						hTargetApp = g_DrawObjects[g_uActiveIndex].hTargetWnd;
+					}
+					else
+					{
+						hTargetApp = g_pWindowProvider->HGetActiveWindow();
+					}
+
+					DismissAeroFlip(hWnd, hTargetApp);
+					GetAsyncKeyState(VK_MENU); 
 					continue;
 				}
 
 				if (g_bWindowListDirty)
 				{
+					PROFILE_SCOPE(L"Update Window List");
+
 					g_pWindowProvider->UpdateWindowList();
+
+					const aeroflip::SWindowTarget* pTargets = nullptr;
+					UINT cTargets = 0;
+					g_pWindowProvider->QueryWindows(&pTargets, &cTargets);
+
+					std::vector<aeroflip::SWindowDrawObject> updatedObjects(cTargets);
+					for (UINT i = 0; i < cTargets; ++i)
+					{
+						updatedObjects[i].hTargetWnd = pTargets[i].hWnd;
+						updatedObjects[i].bIsFocused = pTargets[i].bActive;
+
+						// Retain spatial positions if this window existed previously
+						bool bFoundOld = false;
+						for (const auto& oldObj : g_DrawObjects)
+						{
+							if (oldObj.hTargetWnd == pTargets[i].hWnd)
+							{
+								updatedObjects[i].fPosition[0] = oldObj.fPosition[0];
+								updatedObjects[i].fPosition[1] = oldObj.fPosition[1];
+								updatedObjects[i].fPosition[2] = oldObj.fPosition[2];
+								updatedObjects[i].fRotationY = oldObj.fRotationY;
+								updatedObjects[i].fOpacity = oldObj.fOpacity;
+								bFoundOld = true;
+								break;
+							}
+						}
+
+						if (!bFoundOld)
+						{
+							updatedObjects[i].fPosition[0] = 0.0f;
+							updatedObjects[i].fPosition[1] = 0.0f;
+							updatedObjects[i].fPosition[2] = 10.0f;
+							updatedObjects[i].fRotationY = 0.0f;
+							updatedObjects[i].fOpacity = 0.0f;
+						}
+
+						updatedObjects[i].fScale[0] = 1.2f;
+						updatedObjects[i].fScale[1] = 1.2f;
+						updatedObjects[i].fScale[2] = 1.0f;
+					}
+					g_DrawObjects = std::move(updatedObjects);
 					g_bWindowListDirty = FALSE;
 				}
-				if (g_pRenderer) {
+
+				LARGE_INTEGER liCurrentTime;
+				QueryPerformanceCounter(&liCurrentTime);
+				float fDeltaTime = float(double(liCurrentTime.QuadPart - g_liLastTime.QuadPart) * g_dFreq);
+				g_liLastTime = liCurrentTime;
+
+				if (fDeltaTime > 0.1f) fDeltaTime = 0.1f;
+
+				UpdateWindowAnimations(fDeltaTime);
+
+				if (g_pRenderer)
+				{
 					g_pRenderer->UpdateWindows(g_pWindowProvider);
-					g_pRenderer->OnRender(0.0f);
+					// copy by value, to avoid window order state
+					auto draws = g_DrawObjects;
+					std::sort(draws.begin(), draws.end(),
+						[](const aeroflip::SWindowDrawObject& a, const aeroflip::SWindowDrawObject& b)
+					{
+						return a.iZOrder < b.iZOrder;
+					});
+					g_pRenderer->OnRender(draws.data(), (UINT)draws.size());
 				}
 			}
 			else
 			{
+				// Reset frame timestamps when inactive to skip processing gaps when woken back up
+				QueryPerformanceCounter(&g_liLastTime);
 				Sleep(10);
 			}
 		}
@@ -193,25 +311,14 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 void WakeAeroFlip(HWND hWnd)
 {
-	if (g_pRenderer == NULL)
+	if (g_pWindowProvider)
 	{
-		aeroflip::SD3D9ExRendererApiConfig rConfig;
-		ZeroMemory(&rConfig, sizeof(aeroflip::SD3D9ExRendererApiConfig));
-
-		rConfig.hWnd = hWnd;
-		rConfig.bHardwareAcceleration = TRUE;
-		rConfig.uMultiSampleLevel = 4;
-
-		g_pRenderer = new aeroflip::CD3D9ExRendererApi(&rConfig);
-
-		if (g_pWindowProvider)
-		{
-			g_pWindowProvider->InvalidateAllWindows();
-		}
+		PROFILE_SCOPE(L"Invalidation");
+		g_pWindowProvider->InvalidateAllWindows();
 	}
 	g_bWindowListDirty = TRUE; // Force an immediate refresh of the window targets
 	ShowWindow(hWnd, SW_SHOW);
-	SetWindowPos(hWnd, NULL /*HWND_TOPMOST*/, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+	SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
 	SetForegroundWindow(hWnd);
 }
 
@@ -221,23 +328,29 @@ void DismissAeroFlip(HWND hWnd, HWND hSelectedApp)
 	// reduce memory usage when dismissed
 	if (g_pRenderer != NULL)
 	{
-		delete g_pRenderer;
-		g_pRenderer = NULL;
+		g_pRenderer->ReleaseWindows();
 	}
 	// clear up RAM
 	SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
 	if (hSelectedApp != NULL)
 	{
-		if (IsIconic(hSelectedApp))
+		if (hSelectedApp == GetDesktopWindow()) 
 		{
-			ShowWindow(hSelectedApp, SW_RESTORE);
+			
 		}
 		else
 		{
-			HWND hForeground = GetForegroundWindow();
-			if (hForeground != hSelectedApp)
+			if (IsIconic(hSelectedApp))
 			{
-				SetForegroundWindow(hSelectedApp);
+				ShowWindow(hSelectedApp, SW_RESTORE);
+			}
+			else
+			{
+				HWND hForeground = GetForegroundWindow();
+				if (hForeground != hSelectedApp)
+				{
+					SetForegroundWindow(hSelectedApp);
+				}
 			}
 		}
 	}
@@ -275,17 +388,6 @@ void MakeWindowTransparent(HWND hWnd)
 {
 	MARGINS margins = { -1, -1, -1, -1 };
 	DwmExtendFrameIntoClientArea(hWnd, &margins);
-
-	enum DWM_SYSTEMBACKDROP_TYPE {
-		DWMSBT_AUTO = 0,
-		DWMSBT_NONE = 1,            
-		DWMSBT_MAINWINDOW = 2,      
-		DWMSBT_TRANSIENTWINDOW = 3, 
-		DWMSBT_TABBEDWINDOW = 4     
-	};
-
-	int backdropType = DWMSBT_NONE;
-	DwmSetWindowAttribute(hWnd, (DWMWINDOWATTRIBUTE)38, &backdropType, sizeof(backdropType));
 }
 
 void CALLBACK WinEventProc(
@@ -314,6 +416,7 @@ void CALLBACK WinEventProc(
 		g_bWindowListDirty = TRUE;
 		if (g_pWindowProvider)
 		{
+			PROFILE_SCOPE(L"Resize Window");
 			g_pWindowProvider->InvalidateWindow(hWnd);
 		}
 		break;
@@ -322,6 +425,8 @@ void CALLBACK WinEventProc(
 		g_bWindowListDirty = TRUE;
 		if (g_pWindowProvider)
 		{
+			PROFILE_SCOPE(L"Cache Window Thumbnail");
+
 			g_pWindowProvider->CacheWindowThumbnail(hWnd);
 			g_pWindowProvider->InvalidateWindow(hWnd);
 			g_pWindowProvider->SetWindowMinimizedFlag(hWnd, TRUE);
@@ -332,6 +437,7 @@ void CALLBACK WinEventProc(
 		g_bWindowListDirty = TRUE;
 		if (g_pWindowProvider)
 		{
+			PROFILE_SCOPE(L"Restore Window");
 			g_pWindowProvider->InvalidateWindow(hWnd);
 			g_pWindowProvider->SetWindowMinimizedFlag(hWnd, FALSE);
 		}
@@ -357,23 +463,23 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 					if (!IsWindowVisible(hWnd))
 					{
 						g_bWindowListDirty = TRUE;
-
 						HWND hLastActiveWindow = GetForegroundWindow();
 						if (hLastActiveWindow != hWnd)
 						{
 							g_pWindowProvider->FlagActiveWindow(hLastActiveWindow);
 						}
 
+						g_uActiveIndex = 0;
 						WakeAeroFlip(hWnd);
 					}
 					else
 					{
-						if (g_pWindowProvider)
+						// Cycle target indexing forwards
+						if (!g_DrawObjects.empty())
 						{
-							g_bWindowListDirty = TRUE;
+							g_uActiveIndex = (g_uActiveIndex + 1) % (UINT)g_DrawObjects.size();
 						}
 					}
-
 					return 1;
 				}
 
@@ -386,6 +492,49 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 	}
 
 	return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+}
+
+void UpdateWindowAnimations(FLOAT fDeltaTime)
+{
+	INT numWindows = (INT)g_DrawObjects.size();
+	if (numWindows == 0) return;
+
+	const UINT maxWindowsToShow = 10;
+
+	for (INT i = 0; i < numWindows; ++i)
+	{
+		INT relativeIndex = (i - (INT)g_uActiveIndex + numWindows) % numWindows;
+		auto& window = g_DrawObjects[i];
+		window.iZOrder = relativeIndex;
+
+		float targetX = 1.0f - (relativeIndex * 1.2f);
+		float targetY = -0.2f + (relativeIndex * 0.2f);
+		float targetZ = 3.0f + (relativeIndex * 1.5f);
+		float targetRotY = -50.0f;
+		float targetOpacity = 1.0f;
+
+		if (relativeIndex >= maxWindowsToShow)
+		{
+			targetOpacity = 0.0f;
+
+			targetX = 1.0f - (maxWindowsToShow * 1.2f);
+			targetY = -0.2f + (maxWindowsToShow * 0.2f);
+			targetZ = 3.0f + (maxWindowsToShow * 1.5f);
+		}
+		else if (relativeIndex >= maxWindowsToShow - 2)
+		{
+			targetOpacity = 1.0f - ((relativeIndex - (maxWindowsToShow - 2)) * 0.5f);
+		}
+
+		float lerpFactor = 12.0f * fDeltaTime;
+		if (lerpFactor > 1.0f) lerpFactor = 1.0f;
+
+		window.fPosition[0] += (targetX - window.fPosition[0]) * lerpFactor;
+		window.fPosition[1] += (targetY - window.fPosition[1]) * lerpFactor;
+		window.fPosition[2] += (targetZ - window.fPosition[2]) * lerpFactor;
+		window.fRotationY += (targetRotY - window.fRotationY) * lerpFactor;
+		window.fOpacity += (targetOpacity - window.fOpacity) * lerpFactor;
+	}
 }
 
 void InitializeWindowEventHook()

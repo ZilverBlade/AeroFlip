@@ -42,6 +42,9 @@
     <ClInclude Include="CD3D9ExRendererApi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="SWindowDrawObject.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">

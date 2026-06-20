@@ -22,7 +22,7 @@ namespace aeroflip
 
 		void UpdateWindows(class CWindowProvider* pWindowProvider);
 		void ReleaseWindows();
-		void OnRender(FLOAT fDeltaTime);
+		void OnRender(const struct SWindowDrawObject* pWindows, UINT cWindows);
 	private:
 		void InitD3D9Ex();
 		void CreateD3D9ExDevice(UINT uAdapter, D3DDEVTYPE devType, HWND hWnd, UINT uMultiSampleLevel);
@@ -43,7 +43,6 @@ namespace aeroflip
 		{
 			BOOL bIsFocused;
 			HWND hWnd;
-			UINT uIndex;
 			IDirect3DTexture9* pD3D9Texture;
 		};
 

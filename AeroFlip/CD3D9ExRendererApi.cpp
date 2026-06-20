@@ -1,11 +1,9 @@
 #include "stdafx.h" 
+#include "SWindowDrawObject.h"
 #include "CD3D9ExRendererApi.h"
 #include "CWindowProvider.h"
 
 #include <d3dx9.h> 
-
-#include <stdexcept>
-#include <algorithm>
 
 namespace aeroflip
 {
@@ -230,7 +228,6 @@ namespace aeroflip
 			}
 
 			pTexturePair->bIsFocused = pTarget->bActive;
-			pTexturePair->uIndex = uIndex;
 			remainingWindows.push_back(hTargetWnd);
 		}
 
@@ -251,11 +248,6 @@ namespace aeroflip
 				it = m_WindowTextureList.erase(it);
 			}
 		}
-		std::sort(m_WindowTextureList.begin(), m_WindowTextureList.end(),
-			[](const SWindowTexturePair& a, const SWindowTexturePair& b)
-		{
-			return a.uIndex < b.uIndex;
-		});
 	}
 
 	void CD3D9ExRendererApi::ReleaseWindows()
@@ -268,13 +260,11 @@ namespace aeroflip
 		ResetD3D9ExDevice();
 	}
 
-	void CD3D9ExRendererApi::OnRender(FLOAT fDeltaTime)
+	void CD3D9ExRendererApi::OnRender(const SWindowDrawObject* pWindows, UINT cWindows)
 	{
-		UNREFERENCED_PARAMETER(fDeltaTime);
-		if (!m_pD3D9ExDevice)
-		{
-			return;
-		}
+		if (!m_pD3D9ExDevice) return;
+
+		// 1. Cooperative Recovery Checks
 		HRESULT hr = m_pD3D9ExDevice->TestCooperativeLevel();
 		if (hr == D3DERR_DEVICENOTRESET)
 		{
@@ -284,10 +274,9 @@ namespace aeroflip
 		else if (FAILED(hr))
 		{
 			throw std::runtime_error("D3D9 device lost!");
-			return;
 		}
 
-		// chroma clear
+		// 2. Clear Scene
 		D3DCOLOR clearColor = D3DCOLOR_ARGB(0, 0, 0, 0);
 		m_pD3D9ExDevice->Clear(0, NULL, D3DCLEAR_TARGET, clearColor, 1.0f, 0);
 
@@ -297,71 +286,56 @@ namespace aeroflip
 			DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA));
 			DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA));
 			DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_LIGHTING, FALSE));
-
-			// Turn off culling so we can see the textures even when angled steeply
 			DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE));
 
-			int numWindows = (int)m_WindowTextureList.size();
+			// TODO, maybe quality setting?
+			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAXANISOTROPY, 7));
+			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_ANISOTROPIC));
+			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_ANISOTROPIC));
+			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR));
 
-			if (numWindows > 0)
+			D3DXMATRIX matProj, matView;
+			D3DXMatrixPerspectiveFovLH(&matProj, D3DXToRadian(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
+			DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_PROJECTION, &matProj));
+
+			D3DXVECTOR3 origin(0.0f, 0.0f, -5.0f);
+			D3DXVECTOR3 target(0.0f, 0.0f, 0.0f);
+			D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
+			D3DXMatrixLookAtLH(&matView, &origin, &target, &up);
+			DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));
+
+			for (INT i = static_cast<INT>(cWindows)-1; i >= 0; --i)
 			{
-				int activeIndex = 0;
-				for (int i = 0; i < numWindows; ++i)
+				IDirect3DTexture9* pTexture = NULL;
+				for (UINT uWindowIndex = 0; uWindowIndex < (UINT)m_WindowTextureList.size(); ++uWindowIndex)
 				{
-					if (m_WindowTextureList[i].bIsFocused)
+					if (m_WindowTextureList[uWindowIndex].hWnd == pWindows[i].hTargetWnd)
 					{
-						activeIndex = i;
+						pTexture = m_WindowTextureList[uWindowIndex].pD3D9Texture;
 						break;
 					}
 				}
 
-				D3DXMATRIX matProj, matView;
-				D3DXMatrixPerspectiveFovLH(&matProj, D3DXToRadian(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
-				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_PROJECTION, &matProj));
+				if (!pTexture || pWindows[i].fOpacity <= 0.001f) continue;
 
-				D3DXVECTOR3 origin(0.0f, 0.0f, -5.0f);
-				D3DXVECTOR3 target(0.0f, 0.0f, 0.0f);
-				D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
-				D3DXMatrixLookAtLH(&matView, &origin, &target, &up);
-				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));
+				D3DSURFACE_DESC desc;
+				pTexture->GetLevelDesc(0, &desc);
+				float aspect = static_cast<float>(desc.Width) / static_cast<float>(desc.Height);
 
-				int maxWindowsToShow = min(10, numWindows);
+				D3DXMATRIX matScale, matRotY, matTranslate, matWorld;
+				D3DXMatrixScaling(&matScale, aspect * pWindows[i].fScale[0], pWindows[i].fScale[1], pWindows[i].fScale[2]);
+				D3DXMatrixRotationY(&matRotY, D3DXToRadian(pWindows[i].fRotationY));
+				D3DXMatrixTranslation(&matTranslate, pWindows[i].fPosition[0], pWindows[i].fPosition[1], pWindows[i].fPosition[2]);
 
-				for (int i = maxWindowsToShow - 1; i >= 0; --i)
-				{
-					int targetIndex = (activeIndex + i) % numWindows;
-					const auto& window = m_WindowTextureList[targetIndex];
+				matWorld = matScale * matRotY * matTranslate;
+				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_WORLD, &matWorld));
 
-					if (window.pD3D9Texture == NULL) continue;
+				DWORD alphaVal = static_cast<DWORD>(pWindows[i].fOpacity * 255.0f) << 24;
+				DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_TEXTUREFACTOR, alphaVal | 0x00FFFFFF));
 
-					D3DSURFACE_DESC desc;
-					window.pD3D9Texture->GetLevelDesc(0, &desc);
-					float aspect = (float)desc.Width / (float)desc.Height;
-
-					float fRotY = -50.0f; // Tilt the right side towards the camera
-
-					float fOffsetX = 1.0f - (i * 1.2f);
-					float fOffsetY = -0.2f + (i * 0.2f);
-					float fOffsetZ = 3.0f + (i * 1.5f);
-
-					D3DXMATRIX matScale, matRotY, matTranslate, matWorld;
-
-					D3DXMatrixScaling(&matScale, aspect * 1.2f, 1.2f, 1.0f);
-					D3DXMatrixRotationY(&matRotY, D3DXToRadian(fRotY));
-					D3DXMatrixTranslation(&matTranslate, fOffsetX, fOffsetY, fOffsetZ);
-
-					matWorld = matScale * matRotY * matTranslate;
-					DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_WORLD, &matWorld));
-
-					DEVICE_CALL(m_pD3D9ExDevice->SetTexture(0, window.pD3D9Texture));
-					DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAXANISOTROPY, 7));
-					DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_ANISOTROPIC));
-					DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_ANISOTROPIC));
-					DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR));
-					DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));
-
-					DEVICE_CALL(m_pD3D9ExDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, g_QuadVertices, sizeof(SVertex3D)));
-				}
+				DEVICE_CALL(m_pD3D9ExDevice->SetTexture(0, pTexture));
+				DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));
+				DEVICE_CALL(m_pD3D9ExDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, g_QuadVertices, sizeof(SVertex3D)));
 			}
 
 			DEVICE_CALL(m_pD3D9ExDevice->EndScene());
