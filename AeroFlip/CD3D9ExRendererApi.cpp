@@ -44,16 +44,24 @@ namespace aeroflip
 		{
 			if (IsIconic(hTargetWnd))
 			{
-				WINDOWPLACEMENT wp;
-				wp.length = sizeof(WINDOWPLACEMENT);
-				GetWindowPlacement(hTargetWnd, &wp);
-				width = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
-				height = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+				if (pTarget->bHasCachedBounds)
+				{
+					width = pTarget->rcCachedBounds.right - pTarget->rcCachedBounds.left;
+					height = pTarget->rcCachedBounds.bottom - pTarget->rcCachedBounds.top;
+				}
+				else
+				{
+					WINDOWPLACEMENT wp;
+					wp.length = sizeof(WINDOWPLACEMENT);
+					GetWindowPlacement(hTargetWnd, &wp);
+					width = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+					height = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+				}
 			}
 			else
 			{
 				RECT rect;
-				GetWindowRect(hTargetWnd, &rect);
+				GetClientRect(hTargetWnd, &rect);
 				width = rect.right - rect.left;
 				height = rect.bottom - rect.top;
 			}
@@ -120,7 +128,7 @@ namespace aeroflip
 			HBITMAP hBitmap = CreateCompatibleBitmap(hdcScreen, width, height);
 			HGDIOBJ hOld = SelectObject(hdcMem, hBitmap);
 
-			PrintWindow(hTargetWnd, hdcMem, 2);
+			PrintWindow(hTargetWnd, hdcMem, 3);
 
 			BITMAPINFOHEADER bi = { sizeof(BITMAPINFOHEADER), width, -(LONG)height, 1, 32, BI_RGB };
 

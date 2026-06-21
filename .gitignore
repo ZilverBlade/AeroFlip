@@ -1,8 +1,11 @@
 ipch/
 Debug/
 Release/
+Deploy/
 bin/
 AeroFlip.tlog/
+.vs/
+.vscode/
 *.exe
 *.dll
 *.lib
@@ -14,3 +17,4 @@ AeroFlip.tlog/
 *.user
 *.sdf
 *.suo
+*.tlog

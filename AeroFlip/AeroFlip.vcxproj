@@ -181,6 +181,10 @@
     <PreBuildEvent>
       <Command>cd /d "$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(DevEnvDir)..\..\VC\bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
     </PreBuildEvent>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+      <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
     <ClCompile>
@@ -201,6 +205,10 @@
     <PreBuildEvent>
       <Command>cd /d "$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(DevEnvDir)..\..\VC\bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
     </PreBuildEvent>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+      <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -223,6 +231,10 @@
     <PreBuildEvent>
       <Command>cd /d "$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(DevEnvDir)..\..\VC\bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
     </PreBuildEvent>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+      <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -248,6 +260,10 @@
     <PreBuildEvent>
       <Command>cd /d "$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(DevEnvDir)..\..\VC\bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
     </PreBuildEvent>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+      <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Deploy|Win32'">
     <ClCompile>
@@ -273,6 +289,10 @@
     <PreBuildEvent>
       <Command>cd /d "$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(DevEnvDir)..\..\VC\bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
     </PreBuildEvent>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+      <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
     <ClCompile>
@@ -298,6 +318,10 @@
     <PreBuildEvent>
       <Command>cd /d "$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(DevEnvDir)..\..\VC\bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
     </PreBuildEvent>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+      <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Deploy|ARM'">
     <ClCompile>
@@ -323,6 +347,10 @@
     <PreBuildEvent>
       <Command>cd /d "$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(DevEnvDir)..\..\VC\bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
     </PreBuildEvent>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+      <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -349,6 +377,10 @@
     <PreBuildEvent>
       <Command>cd /d "$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(DevEnvDir)..\..\VC\bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
     </PreBuildEvent>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+      <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Deploy|x64'">
     <ClCompile>
@@ -375,6 +407,10 @@
     <PreBuildEvent>
       <Command>cd /d "$(SolutionDir)vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(DevEnvDir)..\..\VC\bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
     </PreBuildEvent>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+      <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="AeroFlip.h" />

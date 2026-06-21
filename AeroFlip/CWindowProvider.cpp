@@ -274,7 +274,7 @@ namespace aeroflip
 				}
 				else
 				{
-					GetWindowRect(hWnd, &rect);
+					GetClientRect(hWnd, &rect);
 					target.rcCachedBounds = rect;
 					target.bHasCachedBounds = TRUE;
 				}
@@ -289,7 +289,7 @@ namespace aeroflip
 				HBITMAP hBitmap = CreateCompatibleBitmap(hdcScreen, width, height);
 
 				HGDIOBJ hOld = SelectObject(hdcMem, hBitmap);
-				PrintWindow(hWnd, hdcMem, 2);
+				PrintWindow(hWnd, hdcMem, 3);
 
 				SelectObject(hdcMem, hOld);
 
