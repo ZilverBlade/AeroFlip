@@ -18,3 +18,8 @@ Windows Vista/7 Flip3D Alt Tabbing for Windows
 Open the solution file, and select your target architecture. Then select either Debug or Release build. Enjoy!
 
 **Note: you MUST select exactly your architecture. If you are x64, you cannot run a x86 build, D3D9 will fail to load** 
+
+
+### SCREENSHOTS
+
+![AeroFlip Desktop Example, Activated With Alt Tab](screenshots/preview.jpg "AeroFlip Activated")
