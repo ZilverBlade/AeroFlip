@@ -2,13 +2,29 @@
 ; AeroFlip Installer Script
 ; ---------------------------------------------------------
 
+!include "x64.nsh"
+
 !define APPNAME "AeroFlip"
 !define APPVERSION "1.0"
 
 Name "${APPNAME}"
-OutFile "AeroFlipSetup64.exe"
+OutFile "AeroFlip_${ARCH}.exe"
 
-InstallDir "$PROGRAMFILES64\${APPNAME}"
+Function .onInit
+    ${If} "${ARCH}" == "x64"
+        ${IfNot} ${RunningX64}
+            MessageBox MB_OK|MB_ICONSTOP "This installer is 64-bit and can only be run on 64-bit Windows."
+            Quit
+        ${EndIf}
+    ${ElseIf} "${ARCH}" == "x86"
+        ${If} ${RunningX64}
+            MessageBox MB_OK|MB_ICONSTOP "This installer is 32-bit and can only be run on 32-bit Windows."
+            Quit
+        ${EndIf}
+    ${EndIf}
+FunctionEnd
+
+InstallDir "C:\Program Files\${APPNAME}"
 
 RequestExecutionLevel admin
 
@@ -22,11 +38,15 @@ Section "Install"
 
     SetOutPath "$INSTDIR"
     
-    File "..\x64\Deploy\AeroFlip.exe"
-    File "install64.bat"
-    File "uninstall.bat"
+	; Kill previous process if its running
+    ExecWait '"$INSTDIR\killproc.bat"'
+	
+    File "${EXEFILE}"
+    File "killproc.bat"
+    File "signcert.bat"
+    File "unsigncert.bat"
     
-    ExecWait '"$INSTDIR\install64.bat"'
+    ExecWait '"$INSTDIR\signcert.bat"'
     
     WriteUninstaller "$INSTDIR\uninstall.exe"
     
@@ -43,11 +63,13 @@ SectionEnd
 ; Uninstallation Section
 ; ---------------------------------------------------------
 Section "Uninstall"
-    ExecWait '"$INSTDIR\uninstall.bat"'
+    ExecWait '"$INSTDIR\killproc.bat"'
+    ExecWait '"$INSTDIR\unsigncert.bat"'
 
     Delete "$INSTDIR\AeroFlip.exe"
-    Delete "$INSTDIR\install64.bat"
-    Delete "$INSTDIR\uninstall.bat"
+    Delete "$INSTDIR\killproc.bat"
+    Delete "$INSTDIR\signcert.bat"
+    Delete "$INSTDIR\unsigncert.bat"
     Delete "$INSTDIR\uninstall.exe"
     
     Delete "$SMPROGRAMS\${APPNAME}.lnk"

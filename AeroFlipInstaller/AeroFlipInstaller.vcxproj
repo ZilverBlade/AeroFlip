@@ -1,0 +1,51 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Deploy|Win32">
+      <Configuration>Deploy</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{47CA235A-D3DD-4C26-B459-2F4F227C7546}</ProjectGuid>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Deploy|Win32'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v120</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Deploy|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Deploy|Win32'">
+    <CustomBuildStep>
+      <Command>@echo off
+msbuild "$(SolutionDir)AeroFlip/AeroFlip.vcxproj" /p:Configuration=Deploy;Platform=Win32
+msbuild "$(SolutionDir)AeroFlip/AeroFlip.vcxproj" /p:Configuration=Deploy;Platform=x64
+
+makensis /DARCH=x86  /DEXEFILE="$(SolutionDir)AeroFlip\Deploy\AeroFlip.exe" /DOUTDIR="$(SolutionDir)AeroFlipInstaller" "$(SolutionDir)AeroFlipInstaller\setup.nsi"
+makensis /DARCH=x64  /DEXEFILE="$(SolutionDir)AeroFlip\x64\Deploy\AeroFlip.exe" /DOUTDIR="$(SolutionDir)AeroFlipInstaller" "$(SolutionDir)AeroFlipInstaller\setup.nsi"</Command>
+    </CustomBuildStep>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Deploy|Win32'">
+    <CustomBuildStep>
+      <Message>Build DEPLOY for x86/x64/ARM and create NSIS installers</Message>
+    </CustomBuildStep>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Deploy|Win32'">
+    <CustomBuildStep>
+      <Outputs>$(SolutionDir)AeroFlipInstaller\AeroFlipSetup_x86.exe;$(SolutionDir)AeroFlipInstaller\AeroFlipSetup_x64.exe</Outputs>
+    </CustomBuildStep>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

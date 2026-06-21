@@ -1,10 +1,6 @@
 @echo off
 setlocal
 
-echo [AeroFlip] Terminating process...
-
-taskkill /f /im AeroFlip.exe
-
 echo [AeroFlip] Cleaning up system certificates...
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^

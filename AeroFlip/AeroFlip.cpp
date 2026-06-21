@@ -62,6 +62,8 @@ void				MakeWindowTransparent(HWND);
 void				InitializeWindowEventHook();
 void				CleanupWindowEventHook();
 void				FocusDesktopViaShell();
+void				HideWindowsFromView();
+void				RestoreWindowsFromView();
 
 int APIENTRY _tWinMain(
 	_In_ HINSTANCE hInstance,
@@ -431,6 +433,7 @@ void WakeAeroFlip(HWND hWnd)
 	ShowWindow(hWnd, SW_SHOW);
 	SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
 	SetForegroundWindow(hWnd);
+	HideWindowsFromView();
 }
 
 void DismissAeroFlip(HWND hWnd, HWND hSelectedApp, BOOL bDesktopBackground)
@@ -444,6 +447,7 @@ void DismissAeroFlip(HWND hWnd, HWND hSelectedApp, BOOL bDesktopBackground)
 	// clear up RAM
 	SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
 
+	RestoreWindowsFromView();
 	if (bDesktopBackground)
 	{
 		FocusDesktopViaShell();
@@ -737,12 +741,12 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 			if (window.fOpacity > 0.10f)
 			{
 				// move forward beyond scren
-				fTargetOpacity = 0.0f;    
+				fTargetOpacity = 0.0f;
 				fTargetX = fTargetBaseX - fTargetOffsetX;
 				fTargetY = fTargetBaseY - fTargetOffsetY;
 				fTargetZ = fTargetBaseZ - fTargetOffsetZ;
 			}
-			else  
+			else
 			{
 				INT backIndex = iNumWindows - 1;
 				window.iZOrder = backIndex;
@@ -752,7 +756,7 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 				if (window.dwMoveMode == aeroflip::eWDOMM_MOVING_TO_BACK)
 				{
 					// shift slightly
-					FLOAT fOffsetIndex = backIndex + 0.1f;
+					FLOAT fOffsetIndex = backIndex + 0.5f;
 					window.fPosition[0] = fTargetBaseX + fOffsetIndex * fTargetOffsetX;
 					window.fPosition[1] = fTargetBaseY + fOffsetIndex * fTargetOffsetY;
 					window.fPosition[2] = fTargetBaseZ + fOffsetIndex * fTargetOffsetZ;
@@ -764,6 +768,7 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 				fTargetY = fTargetBaseY + backIndex * fTargetOffsetY;
 				fTargetZ = fTargetBaseZ + backIndex * fTargetOffsetZ;
 				fTargetOpacity = max(0.0f, 1.0f - ((backIndex - ((INT)uMaxShowWindows - 2)) * 0.5f));
+				fLerpFactor *= 1.5f;
 			}
 		}
 		else
@@ -807,7 +812,6 @@ void CleanupWindowEventHook()
 	}
 }
 
-
 void FocusDesktopViaShell()
 {
 	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
@@ -845,4 +849,16 @@ void FocusDesktopViaShell()
 	{
 		CoUninitialize();
 	}
+}
+
+void HideWindowsFromView()
+{
+	if (!g_pWindowProvider)
+	{
+		return;
+	}
+}
+
+void RestoreWindowsFromView()
+{
 }

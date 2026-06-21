@@ -9,37 +9,41 @@
 
 namespace aeroflip
 {
-	BOOL IsWindowDecorated(HWND hWnd)
+	BOOL IsUwpWindow(HWND hwnd)
 	{
-		LONG_PTR style = GetWindowLongPtrW(hWnd, GWL_STYLE);
-		LONG_PTR exStyle = GetWindowLongPtrW(hWnd, GWL_EXSTYLE);
-
-		if (exStyle & WS_EX_TOOLWINDOW)
+		WCHAR cls[64];
+		return GetClassNameW(hwnd, cls, ARRAYSIZE(cls)) &&
+			(_wcsicmp(cls, L"Windows.UI.Core.CoreWindow") == 0 ||
+			_wcsicmp(cls, L"ApplicationFrameWindow") == 0);
+	}
+	BOOL IsWindowDecorated(HWND hwnd)
+	{
+		if (IsUwpWindow(hwnd))
+		{
+			return FALSE;
+		}
+		
+		if (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW)
 		{
 			return FALSE;
 		}
 
-		BOOL bHasStyledFrame = ((style & WS_CAPTION) == WS_CAPTION) || (style & WS_THICKFRAME);
-		if (!bHasStyledFrame)
+		RECT rcFrame;
+		if (SUCCEEDED(DwmGetWindowAttribute(hwnd,
+			DWMWA_EXTENDED_FRAME_BOUNDS,
+			&rcFrame, sizeof(RECT))))
 		{
-			return FALSE;
+			RECT rcClient;
+			GetClientRect(hwnd, &rcClient);
+			MapWindowPoints(hwnd, NULL, (POINT*)&rcClient, 2);
+
+			return !EqualRect(&rcFrame, &rcClient);
 		}
 
-		RECT rcWindow, rcClient;
-		GetWindowRect(hWnd, &rcWindow);
-		GetClientRect(hWnd, &rcClient);
-
-		int winW = rcWindow.right - rcWindow.left;
-		int winH = rcWindow.bottom - rcWindow.top;
-		int clientW = rcClient.right - rcClient.left;
-		int clientH = rcClient.bottom - rcClient.top;
-
-		if (winW == clientW && winH == clientH)
-		{
-			return FALSE;
-		}
-
-		return TRUE;
+		RECT w, c;
+		GetWindowRect(hwnd, &w);
+		GetClientRect(hwnd, &c);
+		return (w.right - w.left != c.right || w.bottom - w.top != c.bottom);
 	}
 
 	BOOL IsWindows8OrGreater()
