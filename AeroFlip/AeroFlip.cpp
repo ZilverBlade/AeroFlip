@@ -20,15 +20,15 @@
         ScopeTimer(const wchar_t* l) : label(l) { \
             QueryPerformanceFrequency(&freq); \
             QueryPerformanceCounter(&start); \
-																																																														        } \
+																																																																																																																																																																																																																																																														        } \
         ~ScopeTimer() { \
             QueryPerformanceCounter(&end); \
             double ms = (double)(end.QuadPart - start.QuadPart) * 1000.0 / (double)freq.QuadPart; \
             std::wstringstream ss; \
             ss << L"[PROFILE] " << label << L": " << ms << L" ms\n"; \
             OutputDebugStringW(ss.str().c_str()); \
-																																																														        } \
-																															    } timer_##__LINE__(name)
+																																																																																																																																																																																																																																																														        } \
+																																																																																																																															    } timer_##__LINE__(name)
 
 #define MAX_LOADSTRING 100
 
@@ -189,7 +189,7 @@ int APIENTRY _tWinMain(
 						updatedObjects[i].bDesktopBg = pTargets[i].bDesktopWindow;
 
 						// Retain spatial positions if this window existed previously
-						bool bFoundOld = false;
+						BOOL bFoundOld = FALSE;
 						for (const auto& oldObj : g_DrawObjects)
 						{
 							if (oldObj.hTargetWnd == pTargets[i].hWnd)
@@ -199,19 +199,16 @@ int APIENTRY _tWinMain(
 								updatedObjects[i].fPosition[2] = oldObj.fPosition[2];
 								updatedObjects[i].fRotationY = oldObj.fRotationY;
 								updatedObjects[i].fOpacity = oldObj.fOpacity;
-								bFoundOld = true;
+								bFoundOld = TRUE;
 								break;
 							}
 						}
 
-						if (!bFoundOld)
-						{
-							updatedObjects[i].fPosition[0] = 0.0f;
-							updatedObjects[i].fPosition[1] = 0.0f;
-							updatedObjects[i].fPosition[2] = 10.0f;
-							updatedObjects[i].fRotationY = 0.0f;
-							updatedObjects[i].fOpacity = 0.0f;
-						}
+						updatedObjects[i].fPosition[0] = 0.0f;
+						updatedObjects[i].fPosition[1] = 0.0f;
+						updatedObjects[i].fPosition[2] = 0.1f;
+						updatedObjects[i].fRotationY = 0.0f;
+						updatedObjects[i].fOpacity = 1.0f;
 
 						updatedObjects[i].fScale[0] = 1.2f;
 						updatedObjects[i].fScale[1] = 1.2f;
@@ -511,44 +508,78 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 
 void UpdateWindowAnimations(FLOAT fDeltaTime)
 {
-	INT numWindows = (INT)g_DrawObjects.size();
-	if (numWindows == 0) return;
+	INT iNumWindows = (INT)g_DrawObjects.size();
+	if (iNumWindows == 0) return;
 
-	const UINT maxWindowsToShow = 10;
+	const UINT uMaxShowWindows = 10;
 
-	for (INT i = 0; i < numWindows; ++i)
+	FLOAT fLerpFactor = 12.0f * fDeltaTime;
+	if (fLerpFactor > 1.0f) fLerpFactor = 1.0f;
+
+	for (INT i = 0; i < iNumWindows; ++i)
 	{
-		INT relativeIndex = (i - (INT)g_uActiveIndex + numWindows) % numWindows;
 		auto& window = g_DrawObjects[i];
-		window.iZOrder = relativeIndex;
+		INT iRelativeIndex = (i - (INT)g_uActiveIndex + iNumWindows) % iNumWindows;
 
-		float targetX = 1.0f - (relativeIndex * 1.2f);
-		float targetY = -0.2f + (relativeIndex * 0.2f);
-		float targetZ = 3.0f + (relativeIndex * 1.5f);
-		float targetRotY = -50.0f;
-		float targetOpacity = 1.0f;
+		FLOAT fTargetX = 1.0f - (iRelativeIndex * 1.2f);
+		FLOAT fTargetY = -0.2f + (iRelativeIndex * 0.2f);
+		FLOAT fTargetZ = 3.0f + (iRelativeIndex * 1.5f);
+		FLOAT fTargetRotY = -50.0f;
+		FLOAT fTargetOpacity = 1.0f;
 
-		if (relativeIndex >= maxWindowsToShow)
+		if (iRelativeIndex == iNumWindows - 1 && iNumWindows > 1)
 		{
-			targetOpacity = 0.0f;
-
-			targetX = 1.0f - (maxWindowsToShow * 1.2f);
-			targetY = -0.2f + (maxWindowsToShow * 0.2f);
-			targetZ = 3.0f + (maxWindowsToShow * 1.5f);
+			if (window.iZOrder != iRelativeIndex)
+			{
+				window.bMovingToBack = TRUE;
+			}
+			if (window.fOpacity > 0.05f && window.bMovingToBack)
+			{
+				fTargetX = 2.5f;
+				fTargetY = -0.8f;
+				fTargetZ = 1.5f;
+				fTargetOpacity = 0.0f;
+				window.iZOrder = -1;
+			}
+			else
+			{
+				INT backIndex = min(iNumWindows - 1, (INT)uMaxShowWindows);
+				fTargetX = 1.0f - (backIndex * 1.2f);
+				fTargetY = -0.2f + (backIndex * 0.2f);
+				fTargetZ = 3.0f + (backIndex * 1.5f);
+				fTargetOpacity = 1.0f;
+				window.iZOrder = backIndex;
+				window.bMovingToBack = FALSE;
+				if (window.fPosition[0] > 1.5f)
+				{
+					window.fPosition[0] = fTargetX;
+					window.fPosition[1] = fTargetY;
+					window.fPosition[2] = fTargetZ;
+				}
+			}
 		}
-		else if (relativeIndex >= maxWindowsToShow - 2)
+		else
 		{
-			targetOpacity = 1.0f - ((relativeIndex - (maxWindowsToShow - 2)) * 0.5f);
+			window.iZOrder = iRelativeIndex;
+
+			if (iRelativeIndex >= (INT)uMaxShowWindows)
+			{
+				fTargetOpacity = 0.0f;
+				fTargetX = 1.0f - (uMaxShowWindows * 1.2f);
+				fTargetY = -0.2f + (uMaxShowWindows * 0.2f);
+				fTargetZ = 3.0f + (uMaxShowWindows * 1.5f);
+			}
+			else if (iRelativeIndex >= (INT)uMaxShowWindows - 2)
+			{
+				fTargetOpacity = 1.0f - ((iRelativeIndex - ((INT)uMaxShowWindows - 2)) * 0.5f);
+			}
 		}
 
-		float lerpFactor = 12.0f * fDeltaTime;
-		if (lerpFactor > 1.0f) lerpFactor = 1.0f;
-
-		window.fPosition[0] += (targetX - window.fPosition[0]) * lerpFactor;
-		window.fPosition[1] += (targetY - window.fPosition[1]) * lerpFactor;
-		window.fPosition[2] += (targetZ - window.fPosition[2]) * lerpFactor;
-		window.fRotationY += (targetRotY - window.fRotationY) * lerpFactor;
-		window.fOpacity += (targetOpacity - window.fOpacity) * lerpFactor;
+		window.fPosition[0] += (fTargetX - window.fPosition[0]) * fLerpFactor;
+		window.fPosition[1] += (fTargetY - window.fPosition[1]) * fLerpFactor;
+		window.fPosition[2] += (fTargetZ - window.fPosition[2]) * fLerpFactor;
+		window.fRotationY += (fTargetRotY - window.fRotationY) * fLerpFactor;
+		window.fOpacity += (fTargetOpacity - window.fOpacity) * fLerpFactor;
 	}
 }
 

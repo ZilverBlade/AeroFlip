@@ -12,6 +12,7 @@ namespace aeroflip
 		FLOAT fScale[3];     
 		FLOAT fOpacity; 
 		INT iZOrder;
+		BOOL bMovingToBack;
 
 		BOOL bFocused;
 		BOOL bDesktopBg;

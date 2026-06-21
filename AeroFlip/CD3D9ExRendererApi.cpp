@@ -311,6 +311,10 @@ namespace aeroflip
 			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_ANISOTROPIC));
 			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR));
 
+			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE));
+			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE));
+			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_TFACTOR));
+
 			D3DXMATRIX matProj, matView;
 			D3DXMatrixPerspectiveFovLH(&matProj, D3DXToRadian(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
 			DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_PROJECTION, &matProj));
@@ -347,8 +351,9 @@ namespace aeroflip
 				matWorld = matScale * matRotY * matTranslate;
 				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_WORLD, &matWorld));
 
-				DWORD alphaVal = static_cast<DWORD>(pWindows[i].fOpacity * 255.0f) << 24;
-				DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_TEXTUREFACTOR, alphaVal | 0x00FFFFFF));
+				DWORD bAlpha = static_cast<DWORD>(pWindows[i].fOpacity * 255.0f);
+				if (bAlpha > 255) bAlpha = 255;
+				DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_TEXTUREFACTOR, (bAlpha << 24) | 0x00FFFFFF));
 
 				DEVICE_CALL(m_pD3D9ExDevice->SetTexture(0, pTexture));
 				DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));
