@@ -9,6 +9,39 @@
 
 namespace aeroflip
 {
+	BOOL IsWindowDecorated(HWND hWnd)
+	{
+		LONG_PTR style = GetWindowLongPtrW(hWnd, GWL_STYLE);
+		LONG_PTR exStyle = GetWindowLongPtrW(hWnd, GWL_EXSTYLE);
+
+		if (exStyle & WS_EX_TOOLWINDOW)
+		{
+			return FALSE;
+		}
+
+		BOOL bHasStyledFrame = ((style & WS_CAPTION) == WS_CAPTION) || (style & WS_THICKFRAME);
+		if (!bHasStyledFrame)
+		{
+			return FALSE;
+		}
+
+		RECT rcWindow, rcClient;
+		GetWindowRect(hWnd, &rcWindow);
+		GetClientRect(hWnd, &rcClient);
+
+		int winW = rcWindow.right - rcWindow.left;
+		int winH = rcWindow.bottom - rcWindow.top;
+		int clientW = rcClient.right - rcClient.left;
+		int clientH = rcClient.bottom - rcClient.top;
+
+		if (winW == clientW && winH == clientH)
+		{
+			return FALSE;
+		}
+
+		return TRUE;
+	}
+
 	BOOL IsWindows8OrGreater()
 	{
 		OSVERSIONINFOEXW osvi;
@@ -99,6 +132,7 @@ namespace aeroflip
 		ZeroMemory(&target, sizeof(SWindowTarget));
 		target.hWnd = hWnd;
 		wcscpy_s(target.szTitle, szTitle);
+		target.bDecorated = IsWindowDecorated(hWnd);
 		target.bMinimized = IsIconic(hWnd);
 		target.bNeedsUpdate = TRUE;
 		pContext->pList->push_back(target);
@@ -255,13 +289,13 @@ namespace aeroflip
 
 			if (target.hWnd == hWnd)
 			{
-				RECT rect;
+				RECT rcClient;
 
 				if (IsIconic(hWnd))
 				{
 					if (target.bHasCachedBounds)
 					{
-						rect = target.rcCachedBounds;
+						rcClient = target.rcCachedBounds;
 					}
 					else
 					{
@@ -269,18 +303,20 @@ namespace aeroflip
 						WINDOWPLACEMENT wp;
 						wp.length = sizeof(WINDOWPLACEMENT);
 						GetWindowPlacement(hWnd, &wp);
-						rect = wp.rcNormalPosition;
+						rcClient = wp.rcNormalPosition;
 					}
 				}
 				else
 				{
-					GetClientRect(hWnd, &rect);
-					target.rcCachedBounds = rect;
+					GetClientRect(hWnd, &rcClient);
+					ClientToScreen(hWnd, (POINT*)&rcClient.left);
+					ClientToScreen(hWnd, (POINT*)&rcClient.right);
+					target.rcCachedBounds = rcClient;
 					target.bHasCachedBounds = TRUE;
 				}
 
-				int width = rect.right - rect.left;
-				int height = rect.bottom - rect.top;
+				int width = rcClient.right - rcClient.left;
+				int height = rcClient.bottom - rcClient.top;
 
 				if (width <= 0 || height <= 0) return;
 

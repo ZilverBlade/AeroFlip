@@ -7,6 +7,7 @@ namespace aeroflip
 	struct SWindowTarget 
 	{
 		BOOL bDesktopWindow;
+		BOOL bDecorated;
 		BOOL bActive;
 		HWND hWnd;
 		UINT uWindowZOrder;

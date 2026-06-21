@@ -69,5 +69,29 @@
     <Image Include="AeroFlip.ico">
       <Filter>Resource Files</Filter>
     </Image>
+    <Image Include="windowTopLeft.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="windowTop.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="windowTopRight.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="windowRight.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="windowBottomRight.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="windowBottom.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="windowBottomLeft.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="windowLeft.png">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
 </Project>

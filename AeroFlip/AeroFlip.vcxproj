@@ -445,6 +445,14 @@
   <ItemGroup>
     <Image Include="AeroFlip.ico" />
     <Image Include="small.ico" />
+    <Image Include="windowBottom.png" />
+    <Image Include="windowBottomLeft.png" />
+    <Image Include="windowBottomRight.png" />
+    <Image Include="windowLeft.png" />
+    <Image Include="windowRight.png" />
+    <Image Include="windowTop.png" />
+    <Image Include="windowTopLeft.png" />
+    <Image Include="windowTopRight.png" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

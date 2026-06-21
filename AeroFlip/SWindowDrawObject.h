@@ -23,6 +23,7 @@ namespace aeroflip
 		DWORD dwMoveMode;
 
 		BOOL bFocused;
+		BOOL bDecorated;
 		BOOL bDesktopBg;
 		RECT rcBounds;
 	};

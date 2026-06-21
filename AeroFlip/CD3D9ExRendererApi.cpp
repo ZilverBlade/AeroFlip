@@ -1,4 +1,5 @@
 #include "stdafx.h" 
+#include "Resource.h"
 #include "SWindowDrawObject.h"
 #include "CD3D9ExRendererApi.h"
 #include "CWindowProvider.h"
@@ -7,9 +8,9 @@
 
 namespace aeroflip
 {
-#define DEVICE_CALL(call)															\
-		if (FAILED(call)) 															\
-			throw std::runtime_error("Failed to perform device call '"#call"'!")	\
+#define DEVICE_CALL(call)                                                                   \
+        if (FAILED(call))                                                                   \
+            throw std::runtime_error("Failed to perform device call '"#call"'!")            \
 
 	struct SVertex3D
 	{
@@ -18,12 +19,54 @@ namespace aeroflip
 	};
 #define D3DFVF_VERTEX3D (D3DFVF_XYZ | D3DFVF_TEX1)
 
-	SVertex3D g_QuadVertices[] = {
-		{ -1.0f, 1.0f, 0.0f, 0.0f, 0.0f }, // Top Left
-		{ 1.0f, 1.0f, 0.0f, 1.0f, 0.0f }, // Top Right
-		{ -1.0f, -1.0f, 0.0f, 0.0f, 1.0f }, // Bottom Left
-		{ 1.0f, -1.0f, 0.0f, 1.0f, 1.0f }, // Bottom Right
+	struct SVertex2D
+	{
+		float x, y, z, rhw; // Screen coordinates (z=0, rhw=1)
+		float u, v;         // Texture coordinates
 	};
+#define D3DFVF_VERTEX2D (D3DFVF_XYZRHW | D3DFVF_TEX1)
+
+	SVertex3D g_QuadVertices[] = {
+		{ -1.0f, 1.0f, 0.0f, 0.0f, 0.0f },   // Top Left
+		{ 1.0f, 1.0f, 0.0f, 1.0f, 0.0f },    // Top Right
+		{ -1.0f, -1.0f, 0.0f, 0.0f, 1.0f },  // Bottom Left
+		{ 1.0f, -1.0f, 0.0f, 1.0f, 1.0f },   // Bottom Right
+	};
+
+	IDirect3DTexture9* g_pBorderTextures[8] = { NULL };
+	UINT g_BorderResourceIDs[8] = {
+		IDR_WINDOWBORDER_TOPLEFT,     // 0
+		IDR_WINDOWBORDER_TOP,         // 1
+		IDR_WINDOWBORDER_TOPRIGHT,    // 2
+		IDR_WINDOWBORDER_RIGHT,       // 3
+		IDR_WINDOWBORDER_BOTTOMRIGHT, // 4
+		IDR_WINDOWBORDER_BOTTOM,      // 5
+		IDR_WINDOWBORDER_BOTTOMLEFT,  // 6
+		IDR_WINDOWBORDER_LEFT         // 7
+	};
+
+	void LoadBorderTextures(IDirect3DDevice9Ex* pDevice, HINSTANCE hInstance)
+	{
+		for (int i = 0; i < 8; ++i)
+		{
+			if (FAILED(D3DXCreateTextureFromResourceW(
+				pDevice,
+				hInstance,
+				MAKEINTRESOURCEW(g_BorderResourceIDs[i]),
+				&g_pBorderTextures[i]
+				)))
+			{
+				throw std::runtime_error("Failed to load window border texture!");
+			}
+		}
+	}
+	void DestroyBorderTextures()
+	{
+		for (int i = 0; i < 8; ++i)
+		{
+			SafeRelease(g_pBorderTextures[i]);
+		}
+	}
 
 	HRESULT CaptureWindowToTexture(const SWindowTarget* pTarget, IDirect3DDevice9Ex* pDevice, IDirect3DTexture9** ppTexture)
 	{
@@ -31,7 +74,7 @@ namespace aeroflip
 		UINT width = 0;
 		UINT height = 0;
 		BOOL bUseRAMCache = (pTarget->bMinimized && pTarget->pCachedPixels != NULL);
-	
+
 		// mip maps are super slow :/
 		const BOOL bMipMaps = FALSE;
 
@@ -130,7 +173,7 @@ namespace aeroflip
 
 			PrintWindow(hTargetWnd, hdcMem, 3);
 
-			BITMAPINFOHEADER bi = { sizeof(BITMAPINFOHEADER), width, -(LONG)height, 1, 32, BI_RGB };
+			BITMAPINFOHEADER bi = { sizeof(BITMAPINFOHEADER), (LONG)width, -(LONG)height, 1, 32, BI_RGB };
 
 			if (lockedRect.Pitch == nRowBytes)
 			{
@@ -167,6 +210,23 @@ namespace aeroflip
 		return S_OK;
 	}
 
+	void Draw3DBorderQuad(IDirect3DDevice9Ex* pDevice, IDirect3DTexture9* pTexture,
+		float x1, float y1, float x2, float y2)
+	{
+		if (!pTexture) return;
+
+		SVertex3D verts[] = {
+			{ x1, y1, 0.0f, 0.0f, 0.0f }, // Top Left
+			{ x2, y1, 0.0f, 1.0f, 0.0f }, // Top Right
+			{ x1, y2, 0.0f, 0.0f, 1.0f }, // Bottom Left
+			{ x2, y2, 0.0f, 1.0f, 1.0f }  // Bottom Right
+		};
+
+		pDevice->SetTexture(0, pTexture);
+		pDevice->SetFVF(D3DFVF_VERTEX3D);
+		pDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, verts, sizeof(SVertex3D));
+	}
+
 	CD3D9ExRendererApi::CD3D9ExRendererApi(const SD3D9ExRendererApiConfig* pConfig)
 		: m_hWindow(pConfig->hWnd)
 	{
@@ -185,7 +245,11 @@ namespace aeroflip
 		}
 
 		CreateD3D9ExDevice(uAdapter, devType, pConfig->hWnd, pConfig->uMultiSampleLevel);
+
+		HINSTANCE hInst = GetModuleHandle(NULL);
+		LoadBorderTextures(m_pD3D9ExDevice, hInst);
 	}
+
 	CD3D9ExRendererApi::~CD3D9ExRendererApi()
 	{
 		SafeRelease(m_pD3D9ExDevice);
@@ -194,6 +258,7 @@ namespace aeroflip
 		{
 			SafeRelease(texture.pD3D9Texture);
 		}
+		DestroyBorderTextures();
 	}
 
 	void CD3D9ExRendererApi::UpdateWindows(class CWindowProvider* pWindowProvider)
@@ -349,7 +414,10 @@ namespace aeroflip
 
 				D3DSURFACE_DESC desc;
 				pTexture->GetLevelDesc(0, &desc);
-				float aspect = static_cast<float>(desc.Width) / static_cast<float>(desc.Height);
+
+				float winW_px = static_cast<float>(desc.Width);
+				float winH_px = static_cast<float>(desc.Height);
+				float aspect = winW_px / winH_px;
 
 				D3DXMATRIX matScale, matRotY, matTranslate, matWorld;
 				D3DXMatrixScaling(&matScale, aspect * pWindows[i].fScale[0], pWindows[i].fScale[1], pWindows[i].fScale[2]);
@@ -359,6 +427,10 @@ namespace aeroflip
 				matWorld = matScale * matRotY * matTranslate;
 				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_WORLD, &matWorld));
 
+				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_PROJECTION, &matProj));
+				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));
+				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_WORLD, &matWorld));
+
 				DWORD bAlpha = static_cast<DWORD>(pWindows[i].fOpacity * 255.0f);
 				if (bAlpha > 255) bAlpha = 255;
 				DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_TEXTUREFACTOR, (bAlpha << 24) | 0x00FFFFFF));
@@ -366,6 +438,51 @@ namespace aeroflip
 				DEVICE_CALL(m_pD3D9ExDevice->SetTexture(0, pTexture));
 				DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));
 				DEVICE_CALL(m_pD3D9ExDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, g_QuadVertices, sizeof(SVertex3D)));
+
+				if (!pWindows[i].bDesktopBg && pWindows[i].bDecorated)
+				{
+					float borderSizeX = 9.0f / winW_px;
+					float borderSizeY = 9.0f / winH_px;
+					float topBorderSizeY = 38.0f / winH_px;
+					float rightBorderSizeX = 138.0f / winW_px;
+
+					float thickLX = borderSizeX * 2.0f;       // 9px wide (Left side)
+					float thickSmallRX = borderSizeX * 2.0f;  // 9px wide (Right side border)
+					float thickRX = rightBorderSizeX * 2.0f;  // 138px wide (Button asset width)
+					float thickBY = borderSizeY * 2.0f;       // 9px high
+					float thickTY = topBorderSizeY * 2.0f;    // 38px high
+
+					float leftEdge = -1.0f;
+					float rightEdge = 1.0f;
+					float topEdge = 1.0f;
+					float bottomEdge = -1.0f;
+
+					float outerRightEdge = rightEdge + thickSmallRX;
+
+					// Top Left Corner
+					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[0], leftEdge - thickLX, topEdge + thickTY, leftEdge, topEdge);
+
+					// Top Border
+					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[1], leftEdge, topEdge + thickTY, outerRightEdge - thickRX, topEdge);
+
+					// Top Right Corner
+					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[2], outerRightEdge - thickRX, topEdge + thickTY, outerRightEdge, topEdge);
+
+					// Right Border
+					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[3], rightEdge, topEdge, outerRightEdge, bottomEdge);
+
+					// Bottom Right
+					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[4], outerRightEdge - thickRX, bottomEdge, outerRightEdge, bottomEdge - thickBY);
+
+					// Bottom Border
+					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[5], leftEdge, bottomEdge, outerRightEdge - thickRX, bottomEdge - thickBY);
+
+					// Bottom Left Corner
+					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[6], leftEdge - thickLX, bottomEdge, leftEdge, bottomEdge - thickBY);
+
+					// Left Border
+					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[7], leftEdge - thickLX, topEdge, leftEdge, bottomEdge);
+				}
 			}
 
 			DEVICE_CALL(m_pD3D9ExDevice->EndScene());
@@ -411,7 +528,6 @@ namespace aeroflip
 		hr = m_pD3D9Ex->CheckDeviceFormat(uAdapter, devType,
 			mode.Format, D3DUSAGE_QUERY_POSTPIXELSHADER_BLENDING,
 			D3DRTYPE_TEXTURE, m_D3DPresentParams.BackBufferFormat);
-		static HRESULT reference = D3DERR_INVALIDCALL;
 		if (FAILED(hr))
 		{
 			throw std::runtime_error("Failed to query alpha-capable backbuffer!");
