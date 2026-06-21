@@ -41,6 +41,7 @@ aeroflip::CWindowProvider* g_pWindowProvider = NULL;	// DWMAPI Provider
 // Global State Variables:
 BOOL g_bWindowListDirty = TRUE;							// Tracks if the window list needs updating
 BOOL g_bIsDismissing = FALSE;							// Tracks if AeroFlip has released Alt+Tab
+BOOL g_bIsCycling = FALSE;								// Tracks if alt+tab cycle is happening now
 UINT g_uActiveIndex = 0;								// Tracks which window index is front and center
 HWND g_hLastActiveWindow = NULL;						// Tracks which window was active right before AeroFlip
 LARGE_INTEGER g_liLastTime = { 0 };						// Stores the previous frame timestamp
@@ -627,6 +628,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 							if (!g_DrawObjects.empty())
 							{
 								g_uActiveIndex = (g_uActiveIndex + 1) % (UINT)g_DrawObjects.size();
+								g_bIsCycling = TRUE;
 							}
 						}
 					}
@@ -664,11 +666,26 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		auto& window = g_DrawObjects[i];
 		INT iRelativeIndex = (i - (INT)g_uActiveIndex + iNumWindows) % iNumWindows;
 
-		FLOAT fTargetX = 1.0f - (iRelativeIndex * 1.2f);
-		FLOAT fTargetY = -0.9f + (iRelativeIndex * 1.2f);
-		FLOAT fTargetZ = 3.0f + (iRelativeIndex * 1.5f);
+
+		const FLOAT fTargetBaseX = 1.0f;
+		const FLOAT fTargetBaseY = -0.9f;
+		const FLOAT fTargetBaseZ = 3.0f;
+
+		const FLOAT fTargetOffsetX = -1.2f;
+		const FLOAT fTargetOffsetY = 1.2f;
+		const FLOAT fTargetOffsetZ = 1.5f;
+
+		FLOAT fTargetX = fTargetBaseX + iRelativeIndex * fTargetOffsetX;
+		FLOAT fTargetY = fTargetBaseY + iRelativeIndex * fTargetOffsetY;
+		FLOAT fTargetZ = fTargetBaseZ + iRelativeIndex * fTargetOffsetZ;
+
 		FLOAT fTargetRotY = -30.0f;
 		FLOAT fTargetOpacity = 1.0f;
+
+		if (iRelativeIndex >= uMaxShowWindows)
+		{
+			fTargetOpacity = max(0.0f, 0.75f - 0.25f * (iRelativeIndex - uMaxShowWindows));
+		}
 
 		FLOAT fTargetScaleX = 1.2f;
 		FLOAT fTargetScaleY = 1.2f;
@@ -708,53 +725,50 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 				window.iZOrder = iRelativeIndex;
 			}
 		}
-		else if (iRelativeIndex < uMaxShowWindows && iRelativeIndex == iNumWindows - 1 && iNumWindows > 1)
+		else if (iRelativeIndex == (iNumWindows - 1) && g_bIsCycling)
 		{
-			if (window.iZOrder != 0 && window.iZOrder != iRelativeIndex)
+			if (window.dwMoveMode != aeroflip::eWDOMM_MOVING_TO_BACK)
 			{
+				OutputDebugString(L"CYCLE FRONT -> BACK\n");
 				window.dwMoveMode = aeroflip::eWDOMM_MOVING_TO_BACK;
+				window.iZOrder = 999;
 			}
-			if (window.fOpacity > 0.05f && window.dwMoveMode == aeroflip::eWDOMM_MOVING_TO_BACK)
+
+			if (window.fOpacity > 0.10f)
 			{
-				fTargetOpacity = 0.0f;
-				window.iZOrder = -1;
+				// move forward beyond scren
+				fTargetOpacity = 0.0f;    
+				fTargetX = fTargetBaseX - fTargetOffsetX;
+				fTargetY = fTargetBaseY - fTargetOffsetY;
+				fTargetZ = fTargetBaseZ - fTargetOffsetZ;
 			}
-			else
+			else  
 			{
-				INT backIndex = min(iNumWindows - 1, (INT)uMaxShowWindows);
-
-				if (iRelativeIndex >= (INT)uMaxShowWindows - 2)
-				{
-					fTargetOpacity = 1.0f - ((iRelativeIndex - ((INT)uMaxShowWindows - 2)) * 0.5f);
-				}
-				else
-				{
-					fTargetOpacity = 1.0f;
-				}
-
+				INT backIndex = iNumWindows - 1;
 				window.iZOrder = backIndex;
-				window.dwMoveMode = aeroflip::eWDOMM_DEFAULT;
+				g_bIsCycling = FALSE;
 
-				if (window.fPosition[0] > 1.5f)
+				// teleport backwards, beyond screen
+				if (window.dwMoveMode == aeroflip::eWDOMM_MOVING_TO_BACK)
 				{
-					window.fPosition[0] = fTargetX;
-					window.fPosition[1] = fTargetY;
-					window.fPosition[2] = fTargetZ;
+					// shift slightly
+					FLOAT fOffsetIndex = backIndex + 0.1f;
+					window.fPosition[0] = fTargetBaseX + fOffsetIndex * fTargetOffsetX;
+					window.fPosition[1] = fTargetBaseY + fOffsetIndex * fTargetOffsetY;
+					window.fPosition[2] = fTargetBaseZ + fOffsetIndex * fTargetOffsetZ;
+					window.dwMoveMode = aeroflip::eWDOMM_DEFAULT;
 				}
+
+				// Target in the back now
+				fTargetX = fTargetBaseX + backIndex * fTargetOffsetX;
+				fTargetY = fTargetBaseY + backIndex * fTargetOffsetY;
+				fTargetZ = fTargetBaseZ + backIndex * fTargetOffsetZ;
+				fTargetOpacity = max(0.0f, 1.0f - ((backIndex - ((INT)uMaxShowWindows - 2)) * 0.5f));
 			}
 		}
 		else
 		{
 			window.iZOrder = iRelativeIndex;
-
-			if (iRelativeIndex >= uMaxShowWindows)
-			{
-				fTargetOpacity = 0.0f;
-			}
-			else if (iRelativeIndex >= (INT)uMaxShowWindows - 2)
-			{
-				fTargetOpacity = 1.0f - ((iRelativeIndex - ((INT)uMaxShowWindows - 2)) * 0.5f);
-			}
 		}
 
 		window.fPosition[0] += (fTargetX - window.fPosition[0]) * fLerpFactor;
@@ -771,7 +785,7 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 void InitializeWindowEventHook()
 {
 	g_hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
-	if (!g_hKeyboardHook) 
+	if (!g_hKeyboardHook)
 	{
 		OutputDebugString(L"Failed to install Low-Level Keyboard Hook!\n");
 	}
@@ -782,12 +796,12 @@ void InitializeWindowEventHook()
 
 void CleanupWindowEventHook()
 {
-	if (g_hKeyboardHook) 
+	if (g_hKeyboardHook)
 	{
 		UnhookWindowsHookEx(g_hKeyboardHook);
 	}
 
-	if (g_hEventHook) 
+	if (g_hEventHook)
 	{
 		UnhookWinEvent(g_hEventHook);
 	}
