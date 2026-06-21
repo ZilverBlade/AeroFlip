@@ -31,10 +31,7 @@ namespace aeroflip
 		UINT width = 0;
 		UINT height = 0;
 		BOOL bUseRAMCache = (pTarget->bMinimized && pTarget->pCachedPixels != NULL);
-		if (pTarget->bMinimized) 
-		{
-			pTarget->pCachedPixels ? OutputDebugStringA("Minimised and HAS cache") : OutputDebugStringA("Minimised and CACHELESS");
-		}
+	
 		// mip maps are super slow :/
 		const BOOL bMipMaps = FALSE;
 
@@ -102,7 +99,7 @@ namespace aeroflip
 			return E_FAIL;
 		}
 
-		int rowBytes = width * 4;
+		int nRowBytes = width * 4;
 		BYTE* pDest = (BYTE*)lockedRect.pBits;
 
 		if (bUseRAMCache)
@@ -111,9 +108,9 @@ namespace aeroflip
 
 			for (UINT y = 0; y < height; ++y)
 			{
-				memcpy(pDest, pSrc, rowBytes);
+				memcpy(pDest, pSrc, nRowBytes);
 				pDest += lockedRect.Pitch;
-				pSrc += rowBytes;
+				pSrc += nRowBytes;
 			}
 		}
 		else
@@ -127,22 +124,24 @@ namespace aeroflip
 
 			BITMAPINFOHEADER bi = { sizeof(BITMAPINFOHEADER), width, -(LONG)height, 1, 32, BI_RGB };
 
-			if (lockedRect.Pitch == rowBytes)
+			if (lockedRect.Pitch == nRowBytes)
 			{
 				GetDIBits(hdcMem, hBitmap, 0, height, lockedRect.pBits, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
 			}
 			else
 			{
-				std::vector<BYTE> tempPixels(rowBytes * height);
-				GetDIBits(hdcMem, hBitmap, 0, height, tempPixels.data(), (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+				BYTE* pPixels = (BYTE*)malloc(nRowBytes * height);
+				GetDIBits(hdcMem, hBitmap, 0, height, pPixels, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
 
-				BYTE* pSrc = tempPixels.data();
+				BYTE* pSrc = pPixels;
 				for (UINT y = 0; y < height; ++y)
 				{
-					memcpy(pDest, pSrc, rowBytes);
+					memcpy(pDest, pSrc, nRowBytes);
 					pDest += lockedRect.Pitch;
-					pSrc += rowBytes;
+					pSrc += nRowBytes;
 				}
+
+				free(pPixels);
 			}
 
 			SelectObject(hdcMem, hOld);
@@ -198,7 +197,7 @@ namespace aeroflip
 		pWindowProvider->QueryWindows(&pWindowTargets, &uNumWindowTargets);
 
 		UINT uTexturesCapturedThisFrame = 0;
-		const UINT uMaxCapturesPerFrame = 4;
+		const UINT uMaxCapturesPerFrame = 1;
 
 		for (UINT uIndex = 0; uIndex < uNumWindowTargets; ++uIndex)
 		{
@@ -316,7 +315,8 @@ namespace aeroflip
 			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_TFACTOR));
 
 			D3DXMATRIX matProj, matView;
-			D3DXMatrixPerspectiveFovLH(&matProj, D3DXToRadian(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
+			FLOAT fScreenAspect = static_cast<FLOAT>(GetSystemMetrics(SM_CXSCREEN)) / static_cast<FLOAT>(GetSystemMetrics(SM_CYSCREEN));
+			D3DXMatrixPerspectiveFovLH(&matProj, D3DXToRadian(45.0f), fScreenAspect, 0.1f, 100.0f);
 			DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_PROJECTION, &matProj));
 
 			D3DXVECTOR3 origin(0.0f, 0.0f, -5.0f);

@@ -377,9 +377,6 @@
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <Text Include="ReadMe.txt" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="AeroFlip.h" />
     <ClInclude Include="CD3D9ExRendererApi.h" />
     <ClInclude Include="CWindowProvider.h" />

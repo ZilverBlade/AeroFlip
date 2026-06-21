@@ -145,6 +145,8 @@ namespace aeroflip
 					newTarget.uCachedHeight = oldTarget.uCachedHeight;
 					newTarget.pCachedPixels = oldTarget.pCachedPixels;
 					newTarget.cbCachedPixels = oldTarget.cbCachedPixels;
+					newTarget.rcCachedBounds = oldTarget.rcCachedBounds;
+					newTarget.bHasCachedBounds = oldTarget.bHasCachedBounds;
 
 					oldTarget.pCachedPixels = NULL;
 					break;
@@ -250,14 +252,35 @@ namespace aeroflip
 	{
 		for (auto& target : m_ActiveWindows)
 		{
+
 			if (target.hWnd == hWnd)
 			{
-				WINDOWPLACEMENT wp;
-				wp.length = sizeof(WINDOWPLACEMENT);
-				GetWindowPlacement(hWnd, &wp);
+				RECT rect;
 
-				int width = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
-				int height = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+				if (IsIconic(hWnd))
+				{
+					if (target.bHasCachedBounds)
+					{
+						rect = target.rcCachedBounds;
+					}
+					else
+					{
+						// Fallback
+						WINDOWPLACEMENT wp;
+						wp.length = sizeof(WINDOWPLACEMENT);
+						GetWindowPlacement(hWnd, &wp);
+						rect = wp.rcNormalPosition;
+					}
+				}
+				else
+				{
+					GetWindowRect(hWnd, &rect);
+					target.rcCachedBounds = rect;
+					target.bHasCachedBounds = TRUE;
+				}
+
+				int width = rect.right - rect.left;
+				int height = rect.bottom - rect.top;
 
 				if (width <= 0 || height <= 0) return;
 

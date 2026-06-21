@@ -18,6 +18,9 @@ namespace aeroflip
 		BYTE* pCachedPixels;
 		UINT cbCachedPixels;
 
+		RECT rcCachedBounds;
+		BOOL bHasCachedBounds;
+
 		BOOL bNeedsUpdate;
 	};
 }
