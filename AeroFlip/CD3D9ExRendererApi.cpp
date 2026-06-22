@@ -486,7 +486,7 @@ namespace aeroflip
 				DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));
 				DEVICE_CALL(m_pD3D9ExDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, g_QuadVertices, sizeof(SVertex3D)));
 
-				if (m_Config.bRenderWindowBorders && !pWindows[i].bDesktopBg && pWindows[i].bDecorated)
+				if (!pWindows[i].bDesktopBg && pWindows[i].bDecorated)
 				{
 					float borderSizeX = 9.0f / winW_px;
 					float borderSizeY = 9.0f / winH_px;

@@ -144,8 +144,8 @@ namespace aeroflip
 		return TRUE;
 	}
 
-	CWindowProvider::CWindowProvider(const SWindowProviderConfig* pConfig)
-		: m_hWindow(pConfig->hWnd), m_szAppWindowClass(pConfig->szAppWindowClass)
+	CWindowProvider::CWindowProvider(HWND hWnd, const WCHAR* szAppWindowClass)
+		: m_hWindow(hWnd), m_szAppWindowClass(szAppWindowClass)
 	{
 	}
 
