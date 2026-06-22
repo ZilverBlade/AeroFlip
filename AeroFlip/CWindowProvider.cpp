@@ -86,7 +86,7 @@ namespace aeroflip
 			return TRUE;
 		}
 
-		if (!IsWindowVisible(hWnd) || !IsWindowEnabled(hWnd))
+		if (!IsWindowVisible(hWnd))
 		{
 			return TRUE;
 		}
