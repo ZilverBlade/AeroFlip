@@ -7,6 +7,7 @@
 #include "SAeroFlipConfig.h"
 
 #include <commctrl.h>
+#include <shellapi.h>
 #include <tlhelp32.h>
 
 #define MAX_LOADSTRING 100
@@ -37,14 +38,106 @@ void				OnCbnMsaaQualitySelect(const SWndEvent* pEvent, int nSelection);
 void				OnCbnTextureQualitySelect(const SWndEvent* pEvent, int nSelection);
 void				OnCbnShortcutSelect(const SWndEvent* pEvent, int nSelection);
 
-void TerminateProcess(LPWSTR lpszProcName)
+DWORD GetProcessIdByName(LPCTSTR lpszProcessName)
 {
-	UNREFERENCED_PARAMETER(lpszProcName);
+	DWORD processId = 0;
+
+	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+
+	if (hSnapshot != INVALID_HANDLE_VALUE)
+	{
+		PROCESSENTRY32 pe32;
+		pe32.dwSize = sizeof(PROCESSENTRY32);
+
+		if (Process32FirstW(hSnapshot, &pe32))
+		{
+			do
+			{
+				if (_tcsicmp(pe32.szExeFile, lpszProcessName) == 0)
+				{
+					processId = pe32.th32ProcessID;
+					break;
+				}
+			} while (Process32NextW(hSnapshot, &pe32));
+		}
+
+		CloseHandle(hSnapshot);
+	}
+
+	return processId;
 }
 
-void LaunchProcess(LPWSTR lpszProcPath)
+HWND GetWindowHandleByProcessId(DWORD processId)
 {
-	UNREFERENCED_PARAMETER(lpszProcPath);
+	if (processId == 0) return NULL;
+
+
+	struct FindWindowData {
+		DWORD dwProcessId;
+		HWND hWndFound;
+
+		static BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
+		{
+			FindWindowData* pData = (FindWindowData*)lParam;
+			DWORD dwWindowPid = 0;
+
+			GetWindowThreadProcessId(hWnd, &dwWindowPid);
+
+			if (dwWindowPid == pData->dwProcessId)
+			{
+				pData->hWndFound = hWnd;
+				return FALSE;
+			}
+
+			return TRUE;
+		}
+	};
+
+
+	FindWindowData data = { 0 };
+	data.dwProcessId = processId;
+	data.hWndFound = NULL;
+
+	EnumWindows(FindWindowData::EnumWindowsProc, (LPARAM)&data);
+
+	return data.hWndFound;
+}
+
+void TerminateAeroFlipProcess()
+{
+	HWND hWnd = GetWindowHandleByProcessId(GetProcessIdByName(TEXT("AeroFlip.exe")));
+	if (hWnd != NULL)
+	{
+		PostMessage(hWnd, WM_CLOSE, 0, 0);
+	}
+}
+
+void LaunchAeroFlipProcess()
+{
+	TCHAR exePath[MAX_PATH];
+	GetModuleFileName(NULL, exePath, MAX_PATH);
+
+	TCHAR* lastSlash = _tcsrchr(exePath, L'\\');
+	if (lastSlash != NULL)
+	{
+		*(lastSlash + 1) = TEXT('\0');
+	}
+
+	lstrcat(exePath, TEXT("AeroFlip.exe"));
+
+	HINSTANCE hInst = ShellExecute(
+		NULL,
+		L"open",
+		exePath,
+		NULL,
+		exePath,
+		SW_SHOW
+		);
+
+	if ((INT_PTR)hInst <= 32)
+	{
+		OutputDebugString(TEXT("Failed to launch AeroFlip.exe"));
+	}
 }
 
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
@@ -63,8 +156,12 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
 		// Process was not running already
 		break;
 	case ERROR_ALREADY_EXISTS:
-		OutputDebugString(TEXT("Configurator instance already running\n"));
+	{
+		OutputDebugString(TEXT("Configurator instance already running, focussing...\n"));
+		HWND hWnd = GetWindowHandleByProcessId(GetProcessIdByName(TEXT("AeroFlipConfigurator.exe")));
+		SetForegroundWindow(hWnd);
 		return TRUE;
+	}
 	default:
 		OutputDebugString(TEXT("Unknown error occurred creating mutex, terminating...\n"));
 		return FALSE;
@@ -124,7 +221,6 @@ INT_PTR CALLBACK MasterDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 		SendDlgItemMessage(hDlg, IDC_SHORTCUT_MODE, CB_ADDSTRING, 0, (LPARAM)_T("Alt+Tab"));
 		SendDlgItemMessage(hDlg, IDC_SHORTCUT_MODE, CB_ADDSTRING, 0, (LPARAM)_T("Win+Tab"));
 
-
 		SendDlgItemMessage(hDlg, IDC_RENDERER_MODE, CB_SETCURSEL, 0, 0);
 		SendDlgItemMessage(hDlg, IDC_MSAA_QUALITY, CB_SETCURSEL, 2, 0);
 		SendDlgItemMessage(hDlg, IDC_TEXTURE_QUALITY, CB_SETCURSEL, 1, 0);
@@ -168,10 +264,10 @@ INT_PTR CALLBACK MasterDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 			DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hDlg, About);
 			return (INT_PTR)TRUE;
 		case IDM_START:
-			LaunchProcess(L"C:/Program Files/AeroFlip.exe");
+			LaunchAeroFlipProcess();
 			return (INT_PTR)TRUE;
 		case IDM_EXIT:
-			TerminateProcess(L"AeroFlip.exe");
+			TerminateAeroFlipProcess();
 			return (INT_PTR)TRUE;
 
 		case IDC_APPLY:

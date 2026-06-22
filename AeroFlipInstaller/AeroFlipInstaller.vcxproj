@@ -28,14 +28,16 @@
       <Command>@echo off
 msbuild "$(SolutionDir)AeroFlip/AeroFlip.vcxproj" /p:Configuration=Deploy;Platform=Win32
 msbuild "$(SolutionDir)AeroFlip/AeroFlip.vcxproj" /p:Configuration=Deploy;Platform=x64
+msbuild "$(SolutionDir)AeroFlipConfigurator/AeroFlipConfigurator.vcxproj" /p:Configuration=Deploy;Platform=Win32
+msbuild "$(SolutionDir)AeroFlipConfigurator/AeroFlipConfigurator.vcxproj" /p:Configuration=Deploy;Platform=x64
 
-makensis /DARCH=x86  /DEXEFILE="$(SolutionDir)AeroFlip\Deploy\AeroFlip.exe" /DOUTDIR="$(SolutionDir)AeroFlipInstaller" "$(SolutionDir)AeroFlipInstaller\setup.nsi"
-makensis /DARCH=x64  /DEXEFILE="$(SolutionDir)AeroFlip\x64\Deploy\AeroFlip.exe" /DOUTDIR="$(SolutionDir)AeroFlipInstaller" "$(SolutionDir)AeroFlipInstaller\setup.nsi"</Command>
+makensis /DARCH=x86 /DEXEFILE="$(SolutionDir)AeroFlip\Deploy\AeroFlip.exe" /DCFGEXEFILE="$(SolutionDir)AeroFlipConfigurator\Deploy\AeroFlipConfigurator.exe" "$(SolutionDir)AeroFlipInstaller\setup.nsi"
+makensis /DARCH=x64 /DEXEFILE="$(SolutionDir)AeroFlip\x64\Deploy\AeroFlip.exe" /DCFGEXEFILE="$(SolutionDir)AeroFlipConfigurator\x64\Deploy\AeroFlipConfigurator.exe" "$(SolutionDir)AeroFlipInstaller\setup.nsi"</Command>
     </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Deploy|Win32'">
     <CustomBuildStep>
-      <Message>Build DEPLOY for x86/x64/ARM and create NSIS installers</Message>
+      <Message>Build DEPLOY for x86/x64 and create NSIS installers</Message>
     </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Deploy|Win32'">
