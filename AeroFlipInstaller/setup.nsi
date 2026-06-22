@@ -38,8 +38,9 @@ Section "Install"
 
     SetOutPath "$INSTDIR"
     
-	; Kill previous process if its running
+	; Uninstall previous version if its there
     ExecWait '"$INSTDIR\killproc.bat"'
+    ExecWait '"$INSTDIR\unsigncert.bat"'
 	
     File "${EXEFILE}"
     File "killproc.bat"
