@@ -7,6 +7,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AeroFlip", "AeroFlip\AeroFl
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AeroFlipInstaller", "AeroFlipInstaller\AeroFlipInstaller.vcxproj", "{47CA235A-D3DD-4C26-B459-2F4F227C7546}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AeroFlipCommon", "AeroFlipCommon\AeroFlipCommon.vcxproj", "{4C26DFAC-E396-43EC-9A9B-512FEC58080D}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AeroFlipConfigurator", "AeroFlipConfigurator\AeroFlipConfigurator.vcxproj", "{7180408F-72BA-4DFC-A89C-EAA02A1B60D5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -38,6 +42,24 @@ Global
 		{47CA235A-D3DD-4C26-B459-2F4F227C7546}.Release|Win32.ActiveCfg = Deploy|Win32
 		{47CA235A-D3DD-4C26-B459-2F4F227C7546}.Release|Win32.Build.0 = Deploy|Win32
 		{47CA235A-D3DD-4C26-B459-2F4F227C7546}.Release|x64.ActiveCfg = Deploy|Win32
+		{4C26DFAC-E396-43EC-9A9B-512FEC58080D}.Debug|Win32.ActiveCfg = Debug|Win32
+		{4C26DFAC-E396-43EC-9A9B-512FEC58080D}.Debug|Win32.Build.0 = Debug|Win32
+		{4C26DFAC-E396-43EC-9A9B-512FEC58080D}.Debug|x64.ActiveCfg = Debug|Win32
+		{4C26DFAC-E396-43EC-9A9B-512FEC58080D}.Deploy|Win32.ActiveCfg = Debug|Win32
+		{4C26DFAC-E396-43EC-9A9B-512FEC58080D}.Deploy|Win32.Build.0 = Debug|Win32
+		{4C26DFAC-E396-43EC-9A9B-512FEC58080D}.Deploy|x64.ActiveCfg = Debug|Win32
+		{4C26DFAC-E396-43EC-9A9B-512FEC58080D}.Release|Win32.ActiveCfg = Release|Win32
+		{4C26DFAC-E396-43EC-9A9B-512FEC58080D}.Release|Win32.Build.0 = Release|Win32
+		{4C26DFAC-E396-43EC-9A9B-512FEC58080D}.Release|x64.ActiveCfg = Release|Win32
+		{7180408F-72BA-4DFC-A89C-EAA02A1B60D5}.Debug|Win32.ActiveCfg = Debug|Win32
+		{7180408F-72BA-4DFC-A89C-EAA02A1B60D5}.Debug|Win32.Build.0 = Debug|Win32
+		{7180408F-72BA-4DFC-A89C-EAA02A1B60D5}.Debug|x64.ActiveCfg = Debug|x64
+		{7180408F-72BA-4DFC-A89C-EAA02A1B60D5}.Deploy|Win32.ActiveCfg = Debug|Win32
+		{7180408F-72BA-4DFC-A89C-EAA02A1B60D5}.Deploy|Win32.Build.0 = Debug|Win32
+		{7180408F-72BA-4DFC-A89C-EAA02A1B60D5}.Deploy|x64.ActiveCfg = Debug|Win32
+		{7180408F-72BA-4DFC-A89C-EAA02A1B60D5}.Release|Win32.ActiveCfg = Release|Win32
+		{7180408F-72BA-4DFC-A89C-EAA02A1B60D5}.Release|Win32.Build.0 = Release|Win32
+		{7180408F-72BA-4DFC-A89C-EAA02A1B60D5}.Release|x64.ActiveCfg = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

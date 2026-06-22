@@ -68,15 +68,12 @@ namespace aeroflip
 		}
 	}
 
-	HRESULT CaptureWindowToTexture(const SWindowTarget* pTarget, IDirect3DDevice9Ex* pDevice, IDirect3DTexture9** ppTexture)
+	HRESULT CaptureWindowToTexture(const SWindowTarget* pTarget, IDirect3DDevice9Ex* pDevice, IDirect3DTexture9** ppTexture, BOOL bMipMaps)
 	{
 		HWND hTargetWnd = pTarget->hWnd;
 		UINT width = 0;
 		UINT height = 0;
 		BOOL bUseRAMCache = (pTarget->bMinimized && pTarget->pCachedPixels != NULL);
-
-		// mip maps are super slow :/
-		const BOOL bMipMaps = FALSE;
 
 		if (bUseRAMCache)
 		{
@@ -138,7 +135,7 @@ namespace aeroflip
 			SafeRelease(*ppTexture);
 
 			HRESULT hr = pDevice->CreateTexture(width, height, bMipMaps ? 0 : 1,
-				D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
+				D3DUSAGE_DYNAMIC | (bMipMaps ? D3DUSAGE_AUTOGENMIPMAP : 0), D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
 				ppTexture, NULL);
 
 			if (FAILED(hr)) return hr;
@@ -205,7 +202,8 @@ namespace aeroflip
 
 		if (bMipMaps)
 		{
-			DEVICE_CALL(D3DXFilterTexture(*ppTexture, NULL, 0, D3DX_DEFAULT));
+			(*ppTexture)->SetAutoGenFilterType(D3DTEXF_LINEAR);
+			(*ppTexture)->GenerateMipSubLevels();
 		}
 		return S_OK;
 	}
@@ -227,10 +225,10 @@ namespace aeroflip
 		pDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, verts, sizeof(SVertex3D));
 	}
 
-	CD3D9ExRendererApi::CD3D9ExRendererApi(const SD3D9ExRendererApiConfig* pConfig)
-		: m_hWindow(pConfig->hWnd)
+	CD3D9ExRendererApi::CD3D9ExRendererApi(const SRendererConfig* pConfig, HWND hWnd)
+		: m_hWindow(hWnd)
 	{
-		ZeroMemory(&m_Settings, sizeof(SRendererSettings));
+		memcpy(&m_Config, pConfig, sizeof(SRendererConfig));
 
 		InitD3D9Ex();
 
@@ -246,7 +244,7 @@ namespace aeroflip
 			uAdapter = USelectD3D9ExSoftwareAdapter(&devType);
 		}
 
-		CreateD3D9ExDevice(uAdapter, devType, pConfig->hWnd, pConfig->uMultiSampleLevel);
+		CreateD3D9ExDevice(uAdapter, devType, hWnd, pConfig->uMultiSampleLevel);
 
 		HINSTANCE hInst = GetModuleHandle(NULL);
 		LoadBorderTextures(m_pD3D9ExDevice, hInst);
@@ -272,7 +270,7 @@ namespace aeroflip
 		const UINT uMaxCapturesPerFrame = 1;
 
 		HWND hCandidateLiveUpdateWindow = NULL;
-		if (m_Settings.bLiveCapture)
+		if (m_Config.bLiveCapture)
 		{
 			if (!m_WindowTextureMap.empty())
 			{
@@ -337,7 +335,8 @@ namespace aeroflip
 			if (pTarget->bNeedsUpdate && uTexturesCapturedThisFrame < uMaxCapturesPerFrame ||
 				(!pTarget->bMinimized && hCandidateLiveUpdateWindow == pTarget->hWnd))
 			{
-				if (SUCCEEDED(CaptureWindowToTexture(pTarget, m_pD3D9ExDevice, &pTexturePair->pD3D9Texture)))
+				if (SUCCEEDED(CaptureWindowToTexture(pTarget, m_pD3D9ExDevice, &pTexturePair->pD3D9Texture, 
+					m_Config.dwTextureQuality == eTQ_SMOOTH_MIP)))
 				{
 					pWindowProvider->MarkWindowUpdated(hTargetWnd);
 					uTexturesCapturedThisFrame++;
@@ -408,10 +407,28 @@ namespace aeroflip
 			DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE));
 
 			// TODO, maybe quality setting?
-			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAXANISOTROPY, 7));
-			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_ANISOTROPIC));
-			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_ANISOTROPIC));
-			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR));
+
+			if (m_Config.dwTextureQuality == eTQ_NEAREST)
+			{
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAXANISOTROPY, 0));
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_POINT));
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT));
+			}
+			else
+			{
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAXANISOTROPY, 7));
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_ANISOTROPIC));
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_ANISOTROPIC));
+			}
+			if (m_Config.dwTextureQuality == eTQ_SMOOTH_MIP)
+			{
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR));
+			}
+			else
+			{
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE));
+			}
+
 			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP));
 			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP));
 			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_ADDRESSW, D3DTADDRESS_CLAMP));
@@ -469,7 +486,7 @@ namespace aeroflip
 				DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));
 				DEVICE_CALL(m_pD3D9ExDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, g_QuadVertices, sizeof(SVertex3D)));
 
-				if (m_Settings.bRenderBorders && !pWindows[i].bDesktopBg && pWindows[i].bDecorated)
+				if (m_Config.bRenderWindowBorders && !pWindows[i].bDesktopBg && pWindows[i].bDecorated)
 				{
 					float borderSizeX = 9.0f / winW_px;
 					float borderSizeY = 9.0f / winH_px;
@@ -519,11 +536,6 @@ namespace aeroflip
 		}
 
 		DEVICE_CALL(m_pD3D9ExDevice->Present(NULL, NULL, NULL, NULL));
-	}
-
-	void CD3D9ExRendererApi::SetSettings(const SRendererSettings* pSettings)
-	{
-		memcpy(&m_Settings, pSettings, sizeof(SRendererSettings));
 	}
 
 	void CD3D9ExRendererApi::InitD3D9Ex()

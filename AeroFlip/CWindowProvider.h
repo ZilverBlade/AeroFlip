@@ -9,15 +9,10 @@
 
 namespace aeroflip
 {
-	struct SWindowProviderConfig
-	{
-		HWND hWnd;
-		const WCHAR* szAppWindowClass;
-	};
 	class CWindowProvider
 	{
 	public:
-		CWindowProvider(const SWindowProviderConfig* pConfig);
+		CWindowProvider(HWND hWnd, const WCHAR* szAppWindowClass);
 		~CWindowProvider();
 
 		void UpdateWindowList();

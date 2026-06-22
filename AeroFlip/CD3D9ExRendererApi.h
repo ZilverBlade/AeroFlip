@@ -1,29 +1,22 @@
 #pragma once
 
 #include "IRendererApi.h"
+#include "SRendererConfig.h"
 
 #include <d3d9.h>
 #include <unordered_map>
 
 namespace aeroflip
 {
-	struct SD3D9ExRendererApiConfig
-	{
-		HWND hWnd;
-		BOOL bHardwareAcceleration;
-		UINT uMultiSampleLevel;
-	};
-
 	class CD3D9ExRendererApi : public IRendererApi
 	{
 	public:
-		CD3D9ExRendererApi(const SD3D9ExRendererApiConfig* pConfig);
+		CD3D9ExRendererApi(const SRendererConfig* pRendererConfig, HWND hWnd);
 		~CD3D9ExRendererApi();
 
 		void UpdateWindows(class CWindowProvider* pWindowProvider);
 		void ReleaseWindows();
 		void OnRender(const struct SWindowDrawObject* pWindows, UINT cWindows);
-		void SetSettings(const SRendererSettings* pSettings);
 
 	private:
 		void InitD3D9Ex();
@@ -41,7 +34,7 @@ namespace aeroflip
 
 		HWND m_hWindow = NULL;
 
-		SRendererSettings m_Settings;
+		SRendererConfig m_Config;
 
 		struct SWindowTexturePair
 		{
