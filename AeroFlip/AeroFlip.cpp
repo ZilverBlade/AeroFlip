@@ -75,6 +75,7 @@ void				OpenConfigurator(HWND);
 
 void				WakeAeroFlip(HWND);
 void				DismissAeroFlip(HWND, HWND, BOOL);
+void				UpdateDrawObjects();
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 void CALLBACK		WinEventProc(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD);
 LRESULT CALLBACK	LowLevelKeyboardProc(int, WPARAM, LPARAM);
@@ -258,97 +259,7 @@ int APIENTRY _tWinMain(
 						PROFILE_SCOPE(L"Update Window List");
 
 						g_pWindowProvider->UpdateWindowList();
-
-						const aeroflip::SWindowTarget* pTargets = nullptr;
-						UINT cTargets = 0;
-						g_pWindowProvider->QueryWindows(&pTargets, &cTargets);
-
-						std::vector<aeroflip::SWindowDrawObject> updatedObjects(cTargets);
-						for (UINT i = 0; i < cTargets; ++i)
-						{
-							updatedObjects[i].hTargetWnd = pTargets[i].hWnd;
-							updatedObjects[i].bFocused = pTargets[i].bActive;
-							updatedObjects[i].bDesktopBg = pTargets[i].bDesktopWindow;
-							updatedObjects[i].bDecorated = g_AeroFlipCfg.sConfig.bRenderWindowBorders && pTargets[i].bDecorated;
-
-							RECT r;
-							ZeroMemory(&r, sizeof(RECT));
-							if (IsIconic(pTargets[i].hWnd))
-							{
-								if (pTargets[i].bHasCachedBounds)
-								{
-									r = pTargets[i].rcCachedBounds;
-								}
-								else
-								{
-									WINDOWPLACEMENT wp;
-									wp.length = sizeof(WINDOWPLACEMENT);
-									GetWindowPlacement(pTargets[i].hWnd, &wp);
-									r = wp.rcNormalPosition;
-								}
-							}
-							else
-							{
-								GetClientRect(pTargets[i].hWnd, &r);
-								ClientToScreen(pTargets[i].hWnd, (POINT*)&r.left);
-								ClientToScreen(pTargets[i].hWnd, (POINT*)&r.right);
-							}
-							updatedObjects[i].rcBounds = r;
-
-							// Retain spatial positions if this window existed previously
-							BOOL bFoundOld = FALSE;
-							for (const auto& oldObj : g_DrawObjects)
-							{
-								if (oldObj.hTargetWnd == pTargets[i].hWnd)
-								{
-									updatedObjects[i].fPosition[0] = oldObj.fPosition[0];
-									updatedObjects[i].fPosition[1] = oldObj.fPosition[1];
-									updatedObjects[i].fPosition[2] = oldObj.fPosition[2];
-									updatedObjects[i].fRotationY = oldObj.fRotationY;
-									updatedObjects[i].fOpacity = oldObj.fOpacity;
-									updatedObjects[i].fScale[0] = oldObj.fScale[0];
-									updatedObjects[i].fScale[1] = oldObj.fScale[1];
-									updatedObjects[i].fScale[2] = oldObj.fScale[2];
-									updatedObjects[i].dwMoveMode = aeroflip::eWDOMM_DEFAULT;
-									bFoundOld = TRUE;
-									break;
-								}
-							}
-
-							if (!bFoundOld)
-							{
-								FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
-								FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYSCREEN);
-								FLOAT H_frust = 4.224978f;
-								FLOAT W_frust = H_frust * (Sw / Sh);
-
-								FLOAT w = (FLOAT)(r.right - r.left);
-								if (w <= 0)
-								{
-									w = 100.0f;
-								}
-								FLOAT h = (FLOAT)(r.bottom - r.top);
-								if (h <= 0)
-								{
-									h = 100.0f;
-								}
-								FLOAT cx = r.left + w / 2.0f;
-								FLOAT cy = r.top + h / 2.0f;
-
-								updatedObjects[i].fPosition[0] = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
-								updatedObjects[i].fPosition[1] = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
-								updatedObjects[i].fPosition[2] = 0.1f;
-								updatedObjects[i].fRotationY = 0.0f;
-								updatedObjects[i].fOpacity = 1.0f;
-
-								FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
-								updatedObjects[i].fScale[0] = matchScale;
-								updatedObjects[i].fScale[1] = matchScale;
-								updatedObjects[i].fScale[2] = 1.0f;
-							}
-						}
-						g_DrawObjects = std::move(updatedObjects);
-
+						UpdateDrawObjects();
 						g_bWindowListDirty = FALSE;
 
 						QueryPerformanceCounter(&g_liLastTime);
@@ -563,6 +474,15 @@ void WakeAeroFlip(HWND hWnd)
 	SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
 	SetForegroundWindow(hWnd);
 	HideWindowsFromView();
+	if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab)
+	{
+		// initial tab requires draw objects to be visible to switch
+		if (g_pWindowProvider)
+		{
+			g_pWindowProvider->UpdateWindowList();
+			UpdateDrawObjects();
+		}
+	}
 }
 
 void DismissAeroFlip(HWND hWnd, HWND hSelectedApp, BOOL bDesktopBackground)
@@ -629,6 +549,100 @@ void DismissAeroFlip(HWND hWnd, HWND hSelectedApp, BOOL bDesktopBackground)
 			}
 		}
 	}
+}
+
+void UpdateDrawObjects()
+{
+	const aeroflip::SWindowTarget* pTargets = nullptr;
+	UINT cTargets = 0;
+	g_pWindowProvider->QueryWindows(&pTargets, &cTargets);
+
+	std::vector<aeroflip::SWindowDrawObject> updatedObjects(cTargets);
+	for (UINT i = 0; i < cTargets; ++i)
+	{
+		updatedObjects[i].hTargetWnd = pTargets[i].hWnd;
+		updatedObjects[i].bFocused = pTargets[i].bActive;
+		updatedObjects[i].bDesktopBg = pTargets[i].bDesktopWindow;
+		updatedObjects[i].bDecorated = g_AeroFlipCfg.sConfig.bRenderWindowBorders && pTargets[i].bDecorated;
+
+		RECT r;
+		ZeroMemory(&r, sizeof(RECT));
+		if (IsIconic(pTargets[i].hWnd))
+		{
+			if (pTargets[i].bHasCachedBounds)
+			{
+				r = pTargets[i].rcCachedBounds;
+			}
+			else
+			{
+				WINDOWPLACEMENT wp;
+				wp.length = sizeof(WINDOWPLACEMENT);
+				GetWindowPlacement(pTargets[i].hWnd, &wp);
+				r = wp.rcNormalPosition;
+			}
+		}
+		else
+		{
+			GetClientRect(pTargets[i].hWnd, &r);
+			ClientToScreen(pTargets[i].hWnd, (POINT*)&r.left);
+			ClientToScreen(pTargets[i].hWnd, (POINT*)&r.right);
+		}
+		updatedObjects[i].rcBounds = r;
+
+		// Retain spatial positions if this window existed previously
+		BOOL bFoundOld = FALSE;
+		for (const auto& oldObj : g_DrawObjects)
+		{
+			if (oldObj.hTargetWnd == pTargets[i].hWnd)
+			{
+				updatedObjects[i].fPosition[0] = oldObj.fPosition[0];
+				updatedObjects[i].fPosition[1] = oldObj.fPosition[1];
+				updatedObjects[i].fPosition[2] = oldObj.fPosition[2];
+				updatedObjects[i].fRotationY = oldObj.fRotationY;
+				updatedObjects[i].fOpacity = oldObj.fOpacity;
+				updatedObjects[i].fScale[0] = oldObj.fScale[0];
+				updatedObjects[i].fScale[1] = oldObj.fScale[1];
+				updatedObjects[i].fScale[2] = oldObj.fScale[2];
+				updatedObjects[i].dwMoveMode = aeroflip::eWDOMM_DEFAULT;
+				bFoundOld = TRUE;
+				break;
+			}
+		}
+
+		if (!bFoundOld)
+		{
+			FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
+			FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYSCREEN);
+			FLOAT H_frust = 4.224978f;
+			FLOAT W_frust = H_frust * (Sw / Sh);
+
+			FLOAT w = (FLOAT)(r.right - r.left);
+			if (w <= 0)
+			{
+				w = 100.0f;
+			}
+			FLOAT h = (FLOAT)(r.bottom - r.top);
+			if (h <= 0)
+			{
+				h = 100.0f;
+			}
+			FLOAT cx = r.left + w / 2.0f;
+			FLOAT cy = r.top + h / 2.0f;
+
+			updatedObjects[i].fPosition[0] = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
+			updatedObjects[i].fPosition[1] = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
+			updatedObjects[i].fPosition[2] = 0.1f;
+			updatedObjects[i].fRotationY = 0.0f;
+			updatedObjects[i].fOpacity = 1.0f;
+
+			FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
+			updatedObjects[i].fScale[0] = matchScale;
+			updatedObjects[i].fScale[1] = matchScale;
+			updatedObjects[i].fScale[2] = 1.0f;
+		}
+	}
+	g_DrawObjects = std::move(updatedObjects);
+
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -778,6 +792,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 
 					if (!g_bIsDismissing)
 					{
+						BOOL bSecondTab = FALSE;
 						if (!IsWindowVisible(hWnd))
 						{
 							g_bWindowListDirty = TRUE;
@@ -814,10 +829,24 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 						}
 						else
 						{
+							bSecondTab = TRUE;
+						}
+						if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab || bSecondTab)
+						{
 							// Cycle target indexing forwards
 							if (!g_DrawObjects.empty())
 							{
-								g_uActiveIndex = (g_uActiveIndex + 1) % (UINT)g_DrawObjects.size();
+								BOOL bShiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+
+								if (bShiftPressed && g_AeroFlipCfg.kbConfig.bShiftToMoveBack)
+								{
+									g_uActiveIndex = (g_uActiveIndex + g_DrawObjects.size() - 1) % (UINT)g_DrawObjects.size();
+								}
+								else
+								{
+									g_uActiveIndex = (g_uActiveIndex + 1) % (UINT)g_DrawObjects.size();
+								}
+
 								g_bIsCycling = TRUE;
 							}
 						}
