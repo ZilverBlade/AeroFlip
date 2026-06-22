@@ -36,18 +36,10 @@ Page instfiles
 ; Main Installation Section
 ; ---------------------------------------------------------
 Section "Install"
-    ReadRegStr $R0 HKLM "${UNINST_KEY}" "UninstallString"
-    ${If} $R0 != ""
-        ReadRegStr $R1 HKLM "${UNINST_KEY}" "InstallLocation"
-        
-        ExecWait '"$R1\killproc.bat"'
-        ExecWait '"$R1\uninstall.exe" /S'
-		
-		 ; HACK! wait for complete
-		Sleep 4000
-    ${EndIf}
-
     SetOutPath "$INSTDIR"
+
+    ExecWait '"$INSTDIR\killproc.bat"'
+    ExecWait '"$INSTDIR\unsigncert.bat"'
     
     File "${EXEFILE}"
     File "${CFGEXEFILE}"
