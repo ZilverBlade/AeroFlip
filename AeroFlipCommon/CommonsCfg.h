@@ -76,6 +76,7 @@ ReadIniCfg(kk, vv); } while (0)
 #define IniSection TEXT("Renderer")
 		DefIniCfg(nMode, TEXT("HardwareAcceleration"), &pCfg->rConfig.bHardwareAcceleration);
 		DefIniCfg(nMode, TEXT("LiveCapture"), &pCfg->rConfig.bLiveCapture);
+		DefIniCfg(nMode, TEXT("VSync"), &pCfg->rConfig.bVSync);
 		DefIniCfg(nMode, TEXT("MultiSampleLevel"), &pCfg->rConfig.uMultiSampleLevel);
 		DefIniCfg(nMode, TEXT("RendererMode"), &pCfg->rConfig.dwRendererMode);
 		DefIniCfg(nMode, TEXT("TextureQuality"), &pCfg->rConfig.dwTextureQuality);

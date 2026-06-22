@@ -376,6 +376,7 @@ void SynchronizeDialog(HWND hDlg)
 	{
 		SendDlgItemMessage(hDlg, IDC_HARDWARE_ACCELERATION, BM_SETCHECK, g_AeroFlipCfg.rConfig.bHardwareAcceleration ? 1 : 0, 0);
 		SendDlgItemMessage(hDlg, IDC_LIVE_CAPTURE, BM_SETCHECK, g_AeroFlipCfg.rConfig.bLiveCapture ? 1 : 0, 0);
+		SendDlgItemMessage(hDlg, IDC_VSYNC, BM_SETCHECK, g_AeroFlipCfg.rConfig.bVSync ? 1 : 0, 0);
 
 		switch (g_AeroFlipCfg.rConfig.uMultiSampleLevel)
 		{
@@ -439,6 +440,9 @@ void OnBtnApply(const SWndEvent* pEvent)
 
 	g_AeroFlipCfg.rConfig.bLiveCapture =
 		(SendDlgItemMessage(pEvent->hDlg, IDC_LIVE_CAPTURE, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+	g_AeroFlipCfg.rConfig.bVSync =
+		(SendDlgItemMessage(pEvent->hDlg, IDC_VSYNC, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
 	StoreConfig();
 }
