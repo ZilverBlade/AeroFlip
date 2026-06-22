@@ -230,6 +230,8 @@ namespace aeroflip
 	CD3D9ExRendererApi::CD3D9ExRendererApi(const SD3D9ExRendererApiConfig* pConfig)
 		: m_hWindow(pConfig->hWnd)
 	{
+		ZeroMemory(&m_Settings, sizeof(SRendererSettings));
+
 		InitD3D9Ex();
 
 		UINT uAdapter;
@@ -252,13 +254,10 @@ namespace aeroflip
 
 	CD3D9ExRendererApi::~CD3D9ExRendererApi()
 	{
+		DestroyBorderTextures();
+		ReleaseWindows();
 		SafeRelease(m_pD3D9ExDevice);
 		SafeRelease(m_pD3D9Ex);
-		for (auto& texture : m_WindowTextureList)
-		{
-			SafeRelease(texture.pD3D9Texture);
-		}
-		DestroyBorderTextures();
 	}
 
 	void CD3D9ExRendererApi::UpdateWindows(class CWindowProvider* pWindowProvider)
@@ -272,45 +271,76 @@ namespace aeroflip
 		UINT uTexturesCapturedThisFrame = 0;
 		const UINT uMaxCapturesPerFrame = 1;
 
+		HWND hCandidateLiveUpdateWindow = NULL;
+		if (m_Settings.bLiveCapture)
+		{
+			if (!m_WindowTextureMap.empty())
+			{
+				for (auto it = m_WindowTextureMap.begin(); it != m_WindowTextureMap.end(); ++it)
+				{
+					if (it->second.bNextLiveUpdate)
+					{
+						hCandidateLiveUpdateWindow = it->first;
+						it->second.bNextLiveUpdate = FALSE;
+						for (;;)
+						{
+							if (it == m_WindowTextureMap.end())
+							{
+								break;
+							}
+							auto next = ++it;
+							if (next != m_WindowTextureMap.end())
+							{
+								// skip minimised windows
+								if (IsIconic(next->first))
+								{
+									continue;
+								}
+								next->second.bNextLiveUpdate = TRUE;
+								break;
+							}
+							else
+							{
+								next = m_WindowTextureMap.begin();
+							}
+						}
+						break;
+
+					}
+				}
+				if (hCandidateLiveUpdateWindow == NULL)
+				{
+					m_WindowTextureMap.begin()->second.bNextLiveUpdate = TRUE;
+				}
+			}
+		}
+
 		for (UINT uIndex = 0; uIndex < uNumWindowTargets; ++uIndex)
 		{
 			const SWindowTarget* pTarget = pWindowTargets + uIndex;
 			HWND hTargetWnd = pTarget->hWnd;
 
-			auto it = m_WindowTextureList.begin();
-			if (!m_WindowTextureList.empty())
-			{
-				while (it != m_WindowTextureList.end())
-				{
-					if (it->hWnd == hTargetWnd) break;
-					++it;
-				}
-			}
+			auto it = m_WindowTextureMap.find(hTargetWnd);
 
 			SWindowTexturePair* pTexturePair;
 
-			if (m_WindowTextureList.empty() || it == m_WindowTextureList.end())
+			if (it == m_WindowTextureMap.end())
 			{
-				SWindowTexturePair texturePair;
-				ZeroMemory(&texturePair, sizeof(SWindowTexturePair));
-				texturePair.hWnd = hTargetWnd;
-				m_WindowTextureList.push_back(texturePair);
-				pTexturePair = &m_WindowTextureList.back();
+				pTexturePair = &m_WindowTextureMap[pTarget->hWnd];
+				ZeroMemory(pTexturePair, sizeof(SWindowTexturePair));
 			}
 			else
 			{
-				pTexturePair = &*it;
+				pTexturePair = &it->second;
 			}
 
-			if (pTarget->bNeedsUpdate)
+			if (pTarget->bNeedsUpdate && uTexturesCapturedThisFrame < uMaxCapturesPerFrame ||
+				(!pTarget->bMinimized && hCandidateLiveUpdateWindow == pTarget->hWnd))
 			{
-				if (uTexturesCapturedThisFrame < uMaxCapturesPerFrame)
+				if (SUCCEEDED(CaptureWindowToTexture(pTarget, m_pD3D9ExDevice, &pTexturePair->pD3D9Texture)))
 				{
-					if (SUCCEEDED(CaptureWindowToTexture(pTarget, m_pD3D9ExDevice, &pTexturePair->pD3D9Texture)))
-					{
-						pWindowProvider->MarkWindowUpdated(hTargetWnd);
-						uTexturesCapturedThisFrame++;
-					}
+					pWindowProvider->MarkWindowUpdated(hTargetWnd);
+					uTexturesCapturedThisFrame++;
 				}
 			}
 
@@ -318,12 +348,12 @@ namespace aeroflip
 			remainingWindows.push_back(hTargetWnd);
 		}
 
-		for (auto it = m_WindowTextureList.begin(); it != m_WindowTextureList.end();)
+		for (auto it = m_WindowTextureMap.begin(); it != m_WindowTextureMap.end();)
 		{
 			BOOL bPersists = FALSE;
 			for (auto hCandidateWnd : remainingWindows)
 			{
-				if (hCandidateWnd == it->hWnd)
+				if (hCandidateWnd == it->first)
 				{
 					bPersists = TRUE;
 					break;
@@ -331,8 +361,8 @@ namespace aeroflip
 			}
 			if (!bPersists)
 			{
-				SafeRelease(it->pD3D9Texture);
-				it = m_WindowTextureList.erase(it);
+				SafeRelease(it->second.pD3D9Texture);
+				it = m_WindowTextureMap.erase(it);
 			}
 			else
 			{
@@ -343,11 +373,11 @@ namespace aeroflip
 
 	void CD3D9ExRendererApi::ReleaseWindows()
 	{
-		for (auto& texture : m_WindowTextureList)
+		for (auto& kv : m_WindowTextureMap)
 		{
-			SafeRelease(texture.pD3D9Texture);
+			SafeRelease(kv.second.pD3D9Texture);
 		}
-		m_WindowTextureList.clear();
+		m_WindowTextureMap.clear();
 		ResetD3D9ExDevice();
 	}
 
@@ -401,16 +431,13 @@ namespace aeroflip
 			for (INT i = static_cast<INT>(cWindows)-1; i >= 0; --i)
 			{
 				IDirect3DTexture9* pTexture = NULL;
-				for (UINT uWindowIndex = 0; uWindowIndex < (UINT)m_WindowTextureList.size(); ++uWindowIndex)
+				auto it = m_WindowTextureMap.find(pWindows[i].hTargetWnd);
+				if (it != m_WindowTextureMap.end())
 				{
-					if (m_WindowTextureList[uWindowIndex].hWnd == pWindows[i].hTargetWnd)
-					{
-						pTexture = m_WindowTextureList[uWindowIndex].pD3D9Texture;
-						break;
-					}
+					pTexture = it->second.pD3D9Texture;
 				}
 
-				if (!pTexture || pWindows[i].fOpacity <= 0.001f) continue;
+				if (!pTexture || pWindows[i].fOpacity < 1.0f / 255.0f) continue;
 
 				D3DSURFACE_DESC desc;
 				pTexture->GetLevelDesc(0, &desc);
@@ -439,7 +466,7 @@ namespace aeroflip
 				DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));
 				DEVICE_CALL(m_pD3D9ExDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, g_QuadVertices, sizeof(SVertex3D)));
 
-				if (!pWindows[i].bDesktopBg && pWindows[i].bDecorated)
+				if (m_Settings.bRenderBorders && !pWindows[i].bDesktopBg && pWindows[i].bDecorated)
 				{
 					float borderSizeX = 9.0f / winW_px;
 					float borderSizeY = 9.0f / winH_px;
@@ -489,6 +516,11 @@ namespace aeroflip
 		}
 
 		DEVICE_CALL(m_pD3D9ExDevice->Present(NULL, NULL, NULL, NULL));
+	}
+
+	void CD3D9ExRendererApi::SetSettings(const SRendererSettings* pSettings)
+	{
+		memcpy(&m_Settings, pSettings, sizeof(SRendererSettings));
 	}
 
 	void CD3D9ExRendererApi::InitD3D9Ex()

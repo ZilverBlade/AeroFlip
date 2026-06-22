@@ -115,6 +115,14 @@ int APIENTRY _tWinMain(
 		rConfig.uMultiSampleLevel = 4;
 
 		g_pRenderer = new aeroflip::CD3D9ExRendererApi(&rConfig);
+
+		aeroflip::SRendererSettings rSettings;
+		ZeroMemory(&rSettings, sizeof(aeroflip::SRendererSettings));
+
+		rSettings.bLiveCapture = TRUE;
+		rSettings.bRenderBorders = TRUE;
+
+		g_pRenderer->SetSettings(&rSettings);
 	}
 
 	InitializeWindowEventHook();
@@ -733,7 +741,6 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		{
 			if (window.dwMoveMode != aeroflip::eWDOMM_MOVING_TO_BACK)
 			{
-				OutputDebugString(L"CYCLE FRONT -> BACK\n");
 				window.dwMoveMode = aeroflip::eWDOMM_MOVING_TO_BACK;
 				window.iZOrder = 999;
 			}

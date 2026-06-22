@@ -23,6 +23,8 @@ namespace aeroflip
 		void UpdateWindows(class CWindowProvider* pWindowProvider);
 		void ReleaseWindows();
 		void OnRender(const struct SWindowDrawObject* pWindows, UINT cWindows);
+		void SetSettings(const SRendererSettings* pSettings);
+
 	private:
 		void InitD3D9Ex();
 		void CreateD3D9ExDevice(UINT uAdapter, D3DDEVTYPE devType, HWND hWnd, UINT uMultiSampleLevel);
@@ -39,13 +41,16 @@ namespace aeroflip
 
 		HWND m_hWindow = NULL;
 
+		SRendererSettings m_Settings;
+
 		struct SWindowTexturePair
 		{
 			BOOL bIsFocused;
-			HWND hWnd;
 			IDirect3DTexture9* pD3D9Texture;
+			// Staggered update, to improve performance
+			BOOL bNextLiveUpdate;
 		};
 
-		std::vector<SWindowTexturePair> m_WindowTextureList;
+		std::unordered_map<HWND, SWindowTexturePair> m_WindowTextureMap;
 	};
 }
