@@ -7,6 +7,8 @@
 #include "SWindowDrawObject.h"
 #include "CD3D9ExRendererApi.h" 
 #include "CWindowProvider.h" 
+#include "CommonsCfg.h"
+
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
 #include <shlobj.h> 
@@ -47,6 +49,12 @@ aeroflip::SAeroFlipConfig g_AeroFlipCfg;
 aeroflip::IRendererApi* g_pRenderer = NULL;				// Windowing renderer
 aeroflip::CWindowProvider* g_pWindowProvider = NULL;	// DWMAPI Provider
 
+// Global State Variables for File Watching
+HANDLE g_hWatcherThread = NULL;
+HANDLE g_hWatcherStopEvent = NULL;
+CRITICAL_SECTION g_csRendererLock;
+BOOL g_bRecreateRenderer = FALSE;
+
 // Global State Variables:
 BOOL g_bWindowListDirty = TRUE;							// Tracks if the window list needs updating
 BOOL g_bIsDismissing = FALSE;							// Tracks if AeroFlip has released Alt+Tab
@@ -70,6 +78,7 @@ void				DismissAeroFlip(HWND, HWND, BOOL);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 void CALLBACK		WinEventProc(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD);
 LRESULT CALLBACK	LowLevelKeyboardProc(int, WPARAM, LPARAM);
+DWORD WINAPI		ConfigFileWatcherThread(LPVOID);
 
 void                LoadConfig();
 
@@ -80,6 +89,11 @@ void				CleanupWindowEventHook();
 void				FocusDesktopViaShell();
 void				HideWindowsFromView();
 void				RestoreWindowsFromView();
+
+aeroflip::IRendererApi* GetRendererApi(const aeroflip::SRendererConfig* pRendererConfig, HWND hWnd)
+{
+	return new aeroflip::CD3D9ExRendererApi(pRendererConfig, hWnd);
+}
 
 int APIENTRY _tWinMain(
 	_In_ HINSTANCE hInstance,
@@ -125,14 +139,18 @@ int APIENTRY _tWinMain(
 		g_pWindowProvider = new aeroflip::CWindowProvider(hWnd, g_szWindowClass);
 		g_pWindowProvider->UpdateWindowList();
 
-		g_pRenderer = new aeroflip::CD3D9ExRendererApi(&g_AeroFlipCfg.rConfig, hWnd);
+		g_pRenderer = GetRendererApi(&g_AeroFlipCfg.rConfig, hWnd);
 
 		InitializeWindowEventHook();
+		InitializeCriticalSection(&g_csRendererLock);
 
 		LARGE_INTEGER liFreq;
 		QueryPerformanceFrequency(&liFreq);
 		g_dFreq = 1.0 / double(liFreq.QuadPart);
 		QueryPerformanceCounter(&g_liLastTime);
+
+		g_hWatcherStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+		g_hWatcherThread = CreateThread(NULL, 0, ConfigFileWatcherThread, hWnd, 0, NULL);
 
 		while (msg.message != WM_QUIT)
 		{
@@ -345,6 +363,15 @@ int APIENTRY _tWinMain(
 
 					UpdateWindowAnimations(fDeltaTime);
 
+					EnterCriticalSection(&g_csRendererLock);
+					if (g_bRecreateRenderer)
+					{
+						delete g_pRenderer;
+						g_pRenderer = GetRendererApi(&g_AeroFlipCfg.rConfig, hWnd);
+						g_bRecreateRenderer = FALSE;
+					}
+					LeaveCriticalSection(&g_csRendererLock);
+
 					if (g_pRenderer)
 					{
 						g_pRenderer->UpdateWindows(g_pWindowProvider);
@@ -373,6 +400,16 @@ int APIENTRY _tWinMain(
 		OutputDebugStringA(ex.what());
 		OutputDebugString(TEXT("\n"));
 	}
+
+	if (g_hWatcherStopEvent)
+	{
+		SetEvent(g_hWatcherStopEvent);
+		WaitForSingleObject(g_hWatcherThread, 2000); // wait up to 2s before giving up
+		CloseHandle(g_hWatcherThread);
+		CloseHandle(g_hWatcherStopEvent);
+	}
+	DeleteCriticalSection(&g_csRendererLock);
+
 	CleanupWindowEventHook();
 	delete g_pRenderer;
 	delete g_pWindowProvider;
@@ -531,12 +568,16 @@ void WakeAeroFlip(HWND hWnd)
 void DismissAeroFlip(HWND hWnd, HWND hSelectedApp, BOOL bDesktopBackground)
 {
 	ShowWindow(hWnd, SW_HIDE);
+
 	// reduce memory usage when dismissed
+	EnterCriticalSection(&g_csRendererLock); 
 	if (g_pRenderer != NULL)
 	{
 		g_pRenderer->ReleaseWindows();
 	}
-	// clear up RAM
+	LeaveCriticalSection(&g_csRendererLock);
+	
+	// clear up RAM	
 	SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
 
 	RestoreWindowsFromView();
@@ -795,11 +836,65 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 	return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
 }
 
+DWORD WINAPI ConfigFileWatcherThread(LPVOID lpParam)
+{
+	HWND hWndMain = (HWND)lpParam;
+	UNREFERENCED_PARAMETER(hWndMain);
+
+	std::wstring fullPath = aeroflip::GetConfigIniPath(); 
+	size_t lastSlash = fullPath.find_last_of(L"\\/");
+	if (lastSlash == std::wstring::npos) return 0;
+
+	std::wstring directory = fullPath.substr(0, lastSlash);
+	std::wstring fileName = fullPath.substr(lastSlash + 1);
+
+	HANDLE hNotification = FindFirstChangeNotificationW(
+		directory.c_str(),
+		FALSE,
+		FILE_NOTIFY_CHANGE_LAST_WRITE
+		);
+
+	if (hNotification == INVALID_HANDLE_VALUE) return 0;
+
+	HANDLE waitHandles[2] = { g_hWatcherStopEvent, hNotification };
+
+	while (TRUE)
+	{
+		DWORD dwWaitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+
+		if (dwWaitResult == WAIT_OBJECT_0)
+		{
+			// Stop event was signaled
+			break;
+		}
+		else if (dwWaitResult == WAIT_OBJECT_0 + 1)
+		{
+			// Note: A small sleep handles cases where the writing process locks the file momentarily
+			Sleep(100);
+
+			LoadConfig();
+
+			EnterCriticalSection(&g_csRendererLock);
+			g_bRecreateRenderer = TRUE;
+			LeaveCriticalSection(&g_csRendererLock);
+
+			OutputDebugString(L"[Watcher] Config file updated. Renderer successfully recreated.\n");
+
+			FindNextChangeNotification(hNotification);
+		}
+	}
+
+	FindCloseChangeNotification(hNotification);
+	return 0;
+}
+
 void LoadConfig()
 {
 	g_AeroFlipCfg.kbConfig.InitDefault();
 	g_AeroFlipCfg.rConfig.InitDefault();
 	g_AeroFlipCfg.sConfig.InitDefault();
+
+	DefineIni(IniRead, &g_AeroFlipCfg);
 }
 
 void UpdateWindowAnimations(FLOAT fDeltaTime)
@@ -830,8 +925,8 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		const FLOAT fTargetBaseY = -0.9f;
 		const FLOAT fTargetBaseZ = 3.0f;
 
-		const FLOAT fTargetOffsetX = -g_AeroFlipCfg.sConfig.fHorizontalSpacing;
-		const FLOAT fTargetOffsetY = g_AeroFlipCfg.sConfig.fVerticalSpacing;
+		const FLOAT fTargetOffsetX = -g_AeroFlipCfg.sConfig.iHorizontalSpacingMM / 1000.0f;
+		const FLOAT fTargetOffsetY = g_AeroFlipCfg.sConfig.iVerticalSpacingMM / 1000.0f;
 		const FLOAT fTargetOffsetZ = 1.5f;
 
 		FLOAT fTargetX = fTargetBaseX + iRelativeIndex * fTargetOffsetX;

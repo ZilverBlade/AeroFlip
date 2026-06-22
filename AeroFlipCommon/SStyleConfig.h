@@ -10,14 +10,14 @@ namespace aeroflip
 	{
 		BOOL bRenderWindowBorders;
 
-		FLOAT fHorizontalSpacing;
-		FLOAT fVerticalSpacing;
+		INT iHorizontalSpacingMM;
+		INT iVerticalSpacingMM;
 
 		void InitDefault()
 		{
 			bRenderWindowBorders = TRUE;
-			fHorizontalSpacing = 1.2f;
-			fVerticalSpacing = 1.2f;
+			iHorizontalSpacingMM = 1200;
+			iVerticalSpacingMM = 1200;
 		}
 	};
 }

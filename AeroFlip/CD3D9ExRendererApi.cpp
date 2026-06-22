@@ -335,7 +335,7 @@ namespace aeroflip
 			if (pTarget->bNeedsUpdate && uTexturesCapturedThisFrame < uMaxCapturesPerFrame ||
 				(!pTarget->bMinimized && hCandidateLiveUpdateWindow == pTarget->hWnd))
 			{
-				if (SUCCEEDED(CaptureWindowToTexture(pTarget, m_pD3D9ExDevice, &pTexturePair->pD3D9Texture, 
+				if (SUCCEEDED(CaptureWindowToTexture(pTarget, m_pD3D9ExDevice, &pTexturePair->pD3D9Texture,
 					m_Config.dwTextureQuality == eTQ_SMOOTH_MIP)))
 				{
 					pWindowProvider->MarkWindowUpdated(hTargetWnd);
@@ -555,9 +555,24 @@ namespace aeroflip
 		m_D3DPresentParams.hDeviceWindow = hWnd;
 		m_D3DPresentParams.Windowed = TRUE;
 		m_D3DPresentParams.BackBufferFormat = D3DFMT_A8R8G8B8;
-		m_D3DPresentParams.MultiSampleType = (D3DMULTISAMPLE_TYPE)uMultiSampleLevel;
+		m_D3DPresentParams.MultiSampleType = min((D3DMULTISAMPLE_TYPE)uMultiSampleLevel, D3DMULTISAMPLE_16_SAMPLES);
 		m_D3DPresentParams.SwapEffect = D3DSWAPEFFECT_DISCARD;
 		m_D3DPresentParams.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
+
+		// Find closest available MSAA quality.
+		while (m_D3DPresentParams.MultiSampleType > D3DMULTISAMPLE_NONE)
+		{
+			DWORD dwMsQualityLevels = 0;
+			if (FAILED(m_pD3D9Ex->CheckDeviceMultiSampleType(uAdapter, devType, m_D3DPresentParams.BackBufferFormat,
+				m_D3DPresentParams.Windowed, m_D3DPresentParams.MultiSampleType, &dwMsQualityLevels)) || dwMsQualityLevels == 0)
+			{
+				--*(INT*)&m_D3DPresentParams.MultiSampleType;
+			}
+			else
+			{
+				break;
+			}
+		}
 
 		D3DDISPLAYMODEEX mode;
 		mode.Size = sizeof(D3DDISPLAYMODEEX);

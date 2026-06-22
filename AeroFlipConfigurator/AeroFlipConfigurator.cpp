@@ -5,10 +5,15 @@
 #include "resource.h"
 #include "AeroFlipConfigurator.h"
 #include "SAeroFlipConfig.h"
+#include "CommonsCfg.h"
 
 #include <commctrl.h>
 #include <shellapi.h>
-#include <tlhelp32.h>
+#include <process.h>
+#include <Tlhelp32.h>
+#include <winbase.h>
+
+#include <string>
 
 #define MAX_LOADSTRING 100
 
@@ -24,6 +29,9 @@ INT_PTR CALLBACK    MasterDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
 void				LoadConfig();
+void				StoreConfig();
+
+void				SynchronizeDialog(HWND hWnd);
 
 struct SWndEvent
 {
@@ -103,13 +111,33 @@ HWND GetWindowHandleByProcessId(DWORD processId)
 	return data.hWndFound;
 }
 
+// https://stackoverflow.com/a/7956651
+void KillProcessByName(LPCTSTR filename)
+{
+	HANDLE hSnapShot = CreateToolhelp32Snapshot(TH32CS_SNAPALL, NULL);
+	PROCESSENTRY32 pEntry;
+	pEntry.dwSize = sizeof(pEntry);
+	BOOL hRes = Process32First(hSnapShot, &pEntry);
+	while (hRes)
+	{
+		if (lstrcmp(pEntry.szExeFile, filename) == 0)
+		{
+			HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, 0,
+				(DWORD)pEntry.th32ProcessID);
+			if (hProcess != NULL)
+			{
+				TerminateProcess(hProcess, 9);
+				CloseHandle(hProcess);
+			}
+		}
+		hRes = Process32Next(hSnapShot, &pEntry);
+	}
+	CloseHandle(hSnapShot);
+}
+
 void TerminateAeroFlipProcess()
 {
-	HWND hWnd = GetWindowHandleByProcessId(GetProcessIdByName(TEXT("AeroFlip.exe")));
-	if (hWnd != NULL)
-	{
-		PostMessage(hWnd, WM_CLOSE, 0, 0);
-	}
+	KillProcessByName(TEXT("AeroFlip.exe"));
 }
 
 void LaunchAeroFlipProcess()
@@ -131,7 +159,7 @@ void LaunchAeroFlipProcess()
 		exePath,
 		NULL,
 		exePath,
-		SW_SHOW
+		SW_SHOWNORMAL
 		);
 
 	if ((INT_PTR)hInst <= 32)
@@ -221,10 +249,7 @@ INT_PTR CALLBACK MasterDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 		SendDlgItemMessage(hDlg, IDC_SHORTCUT_MODE, CB_ADDSTRING, 0, (LPARAM)_T("Alt+Tab"));
 		SendDlgItemMessage(hDlg, IDC_SHORTCUT_MODE, CB_ADDSTRING, 0, (LPARAM)_T("Win+Tab"));
 
-		SendDlgItemMessage(hDlg, IDC_RENDERER_MODE, CB_SETCURSEL, 0, 0);
-		SendDlgItemMessage(hDlg, IDC_MSAA_QUALITY, CB_SETCURSEL, 2, 0);
-		SendDlgItemMessage(hDlg, IDC_TEXTURE_QUALITY, CB_SETCURSEL, 1, 0);
-		SendDlgItemMessage(hDlg, IDC_SHORTCUT_MODE, CB_SETCURSEL, 0, 0);
+		SynchronizeDialog(hDlg);
 
 		return (INT_PTR)TRUE;
 	}
@@ -311,11 +336,87 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 
 void LoadConfig()
 {
+	// set defaults first
 	g_AeroFlipCfg.kbConfig.InitDefault();
 	g_AeroFlipCfg.rConfig.InitDefault();
 	g_AeroFlipCfg.sConfig.InitDefault();
+
+	DefineIni(IniRead, &g_AeroFlipCfg);
 }
 
+void StoreConfig()
+{
+	DefineIni(IniWrite, &g_AeroFlipCfg);
+}
+
+void SynchronizeDialog(HWND hDlg)
+{
+	// KeyBind
+	{
+		SendDlgItemMessage(hDlg, IDC_CYCLE_ON_FIRST_TAB, BM_SETCHECK, g_AeroFlipCfg.kbConfig.bCycleOnFirstTab ? 1 : 0, 0);
+		SendDlgItemMessage(hDlg, IDC_SHIFT_TO_MOVE_BACK, BM_SETCHECK, g_AeroFlipCfg.kbConfig.bShiftToMoveBack ? 1 : 0, 0);
+
+		switch (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode)
+		{
+		case aeroflip::eFSM_WIN_TAB:
+			SendDlgItemMessage(hDlg, IDC_SHORTCUT_MODE, CB_SETCURSEL, 1, 0);
+			break;
+		case aeroflip::eFSM_ALT_TAB:
+			SendDlgItemMessage(hDlg, IDC_SHORTCUT_MODE, CB_SETCURSEL, 0, 0);
+			break;
+		}
+	}
+
+	// Style
+	{
+		SendDlgItemMessage(hDlg, IDC_RENDER_WINDOW_BORDERS, BM_SETCHECK, g_AeroFlipCfg.sConfig.bRenderWindowBorders ? 1 : 0, 0);
+	}
+
+	// Renderer
+	{
+		SendDlgItemMessage(hDlg, IDC_HARDWARE_ACCELERATION, BM_SETCHECK, g_AeroFlipCfg.rConfig.bHardwareAcceleration ? 1 : 0, 0);
+		SendDlgItemMessage(hDlg, IDC_LIVE_CAPTURE, BM_SETCHECK, g_AeroFlipCfg.rConfig.bLiveCapture ? 1 : 0, 0);
+
+		switch (g_AeroFlipCfg.rConfig.uMultiSampleLevel)
+		{
+		case 1:
+			SendDlgItemMessage(hDlg, IDC_MSAA_QUALITY, CB_SETCURSEL, 0, 0);
+			break;
+		case 2:
+			SendDlgItemMessage(hDlg, IDC_MSAA_QUALITY, CB_SETCURSEL, 1, 0);
+			break;
+		case 4:
+			SendDlgItemMessage(hDlg, IDC_MSAA_QUALITY, CB_SETCURSEL, 2, 0);
+			break;
+		case 8:
+			SendDlgItemMessage(hDlg, IDC_MSAA_QUALITY, CB_SETCURSEL, 3, 0);
+			break;
+		case 16:
+			SendDlgItemMessage(hDlg, IDC_MSAA_QUALITY, CB_SETCURSEL, 4, 0);
+			break;
+		}
+
+		switch (g_AeroFlipCfg.rConfig.dwRendererMode)
+		{
+		case aeroflip::eRM_D3D9_EX:
+			SendDlgItemMessage(hDlg, IDC_RENDERER_MODE, CB_SETCURSEL, 0, 0);
+			break;
+		}
+
+		switch (g_AeroFlipCfg.rConfig.dwTextureQuality)
+		{
+		case aeroflip::eTQ_NEAREST:
+			SendDlgItemMessage(hDlg, IDC_TEXTURE_QUALITY, CB_SETCURSEL, 0, 0);
+			break;
+		case aeroflip::eTQ_SMOOTH:
+			SendDlgItemMessage(hDlg, IDC_TEXTURE_QUALITY, CB_SETCURSEL, 1, 0);
+			break;
+		case aeroflip::eTQ_SMOOTH_MIP:
+			SendDlgItemMessage(hDlg, IDC_TEXTURE_QUALITY, CB_SETCURSEL, 2, 0);
+			break;
+		}
+	}
+}
 
 void OnBtnOk(const SWndEvent* pEvent)
 {
@@ -324,7 +425,22 @@ void OnBtnOk(const SWndEvent* pEvent)
 }
 void OnBtnApply(const SWndEvent* pEvent)
 {
-	UNREFERENCED_PARAMETER(pEvent);
+	g_AeroFlipCfg.kbConfig.bCycleOnFirstTab =
+		(SendDlgItemMessage(pEvent->hDlg, IDC_CYCLE_ON_FIRST_TAB, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+	g_AeroFlipCfg.kbConfig.bShiftToMoveBack =
+		(SendDlgItemMessage(pEvent->hDlg, IDC_SHIFT_TO_MOVE_BACK, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+	g_AeroFlipCfg.sConfig.bRenderWindowBorders =
+		(SendDlgItemMessage(pEvent->hDlg, IDC_RENDER_WINDOW_BORDERS, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+	g_AeroFlipCfg.rConfig.bHardwareAcceleration =
+		(SendDlgItemMessage(pEvent->hDlg, IDC_HARDWARE_ACCELERATION, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+	g_AeroFlipCfg.rConfig.bLiveCapture =
+		(SendDlgItemMessage(pEvent->hDlg, IDC_LIVE_CAPTURE, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+	StoreConfig();
 }
 void OnBtnClose(const SWndEvent* pEvent)
 {

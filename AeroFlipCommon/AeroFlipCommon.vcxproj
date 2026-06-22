@@ -64,6 +64,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="CommonsCfg.h" />
     <ClInclude Include="EFlipShortcutMode.h" />
     <ClInclude Include="ERendererMode.h" />
     <ClInclude Include="ETextureQuality.h" />
