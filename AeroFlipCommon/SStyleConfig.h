@@ -12,6 +12,7 @@ namespace aeroflip
 
 	struct SStyleConfig
 	{
+		BOOL bShowDesktopWhenFlipping;
 		BOOL bRenderWindowBorders;
 
 		UINT uMaxWindowsVisible;
@@ -21,13 +22,13 @@ namespace aeroflip
 
 		INT iAnimationSpeed;
 
-
 		void InitDefault()
 		{
+			bShowDesktopWhenFlipping = TRUE;
 			bRenderWindowBorders = TRUE;
 			uMaxWindowsVisible = 5;
 			iHorizontalSpacingMM = 1200;
-			iVerticalSpacingMM = 1200;
+			iVerticalSpacingMM = 600;
 			iAnimationSpeed = kAS_NORMAL;
 		}
 	};

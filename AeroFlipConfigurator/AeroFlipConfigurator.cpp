@@ -392,6 +392,7 @@ void SynchronizeDialog(HWND hDlg)
 
 	// Style
 	{
+		SendDlgItemMessage(hDlg, IDC_SHOW_DESKTOP, BM_SETCHECK, g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping ? 1 : 0, 0);
 		SendDlgItemMessage(hDlg, IDC_RENDER_WINDOW_BORDERS, BM_SETCHECK, g_AeroFlipCfg.sConfig.bRenderWindowBorders ? 1 : 0, 0);
 
 		SendDlgItemMessage(hDlg, IDC_MAX_WINDOWS_VISIBLE, EM_REPLACESEL, 0,
@@ -419,6 +420,7 @@ void SynchronizeDialog(HWND hDlg)
 	{
 		SendDlgItemMessage(hDlg, IDC_HARDWARE_ACCELERATION, BM_SETCHECK, g_AeroFlipCfg.rConfig.bHardwareAcceleration ? 1 : 0, 0);
 		SendDlgItemMessage(hDlg, IDC_LIVE_CAPTURE, BM_SETCHECK, g_AeroFlipCfg.rConfig.bLiveCapture ? 1 : 0, 0);
+		SendDlgItemMessage(hDlg, IDC_PERSIST_IN_VRAM, BM_SETCHECK, g_AeroFlipCfg.rConfig.bPersistInVRAM ? 1 : 0, 0);
 		SendDlgItemMessage(hDlg, IDC_VSYNC, BM_SETCHECK, g_AeroFlipCfg.rConfig.bVSync ? 1 : 0, 0);
 
 		switch (g_AeroFlipCfg.rConfig.uMultiSampleLevel)
@@ -483,25 +485,49 @@ void OnBtnApply(const SWndEvent* pEvent)
 		g_AeroFlipCfg.sConfig.bRenderWindowBorders =
 			(SendDlgItemMessage(pEvent->hDlg, IDC_RENDER_WINDOW_BORDERS, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
+
+		g_AeroFlipCfg.sConfig.bRenderWindowBorders =
+			(SendDlgItemMessage(pEvent->hDlg, IDC_RENDER_WINDOW_BORDERS, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+		g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping =
+			(SendDlgItemMessage(pEvent->hDlg, IDC_SHOW_DESKTOP, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+		{
+			TCHAR buf[8];
+			ZeroMemory(&buf, sizeof(buf));
+			*(WORD*)buf = 6;
+			
+			SendDlgItemMessage(pEvent->hDlg, IDC_MAX_WINDOWS_VISIBLE, EM_GETLINE, 0, (LPARAM)buf);
+			g_AeroFlipCfg.sConfig.uMaxWindowsVisible = max((UINT)_tstoi(buf), 1); // at least 1 window!
+		}
+		{
+			TCHAR buf[8];
+			ZeroMemory(&buf, sizeof(buf));
+			*(WORD*)buf = 6;
+
+			SendDlgItemMessage(pEvent->hDlg, IDC_HORIZONTAL_SPACING, EM_GETLINE, 0, (LPARAM)buf);
+			g_AeroFlipCfg.sConfig.iHorizontalSpacingMM = _tstoi(buf);
+		}
+		{
+			TCHAR buf[8];
+			ZeroMemory(&buf, sizeof(buf));
+			*(WORD*)buf = 6;
+
+			SendDlgItemMessage(pEvent->hDlg, IDC_VERTICAL_SPACING, EM_GETLINE, 0, (LPARAM)buf);
+			g_AeroFlipCfg.sConfig.iVerticalSpacingMM = _tstoi(buf);
+		}
+
 		g_AeroFlipCfg.rConfig.bHardwareAcceleration =
 			(SendDlgItemMessage(pEvent->hDlg, IDC_HARDWARE_ACCELERATION, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
 		g_AeroFlipCfg.rConfig.bLiveCapture =
 			(SendDlgItemMessage(pEvent->hDlg, IDC_LIVE_CAPTURE, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
+		g_AeroFlipCfg.rConfig.bPersistInVRAM =
+			(SendDlgItemMessage(pEvent->hDlg, IDC_PERSIST_IN_VRAM, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
 		g_AeroFlipCfg.rConfig.bVSync =
 			(SendDlgItemMessage(pEvent->hDlg, IDC_VSYNC, BM_GETCHECK, 0, 0) == BST_CHECKED);
-
-		TCHAR buf[8];
-		ZeroMemory(&buf, sizeof(buf));
-		*(WORD*)buf = 8;
-
-		SendDlgItemMessage(pEvent->hDlg, IDC_MAX_WINDOWS_VISIBLE, EM_GETLINE, 0, (LPARAM)buf);
-		g_AeroFlipCfg.sConfig.uMaxWindowsVisible = max((UINT)_tstoi(buf), 1); // at least 1 window!
-		SendDlgItemMessage(pEvent->hDlg, IDC_HORIZONTAL_SPACING, EM_GETLINE, 0, (LPARAM)buf);
-		g_AeroFlipCfg.sConfig.iHorizontalSpacingMM = _tstoi(buf);
-		SendDlgItemMessage(pEvent->hDlg, IDC_VERTICAL_SPACING, EM_GETLINE, 0, (LPARAM)buf);
-		g_AeroFlipCfg.sConfig.iVerticalSpacingMM = _tstoi(buf);
 
 		StoreConfig();
 	}

@@ -8,6 +8,7 @@
 #include "CD3D9ExRendererApi.h" 
 #include "CWindowProvider.h" 
 #include "CommonsCfg.h"
+#include "DwmLivePreview.h"
 
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
@@ -88,8 +89,8 @@ void				MakeWindowTransparent(HWND);
 void				InitializeWindowEventHook();
 void				CleanupWindowEventHook();
 void				FocusDesktopViaShell();
-void				HideWindowsFromView();
-void				RestoreWindowsFromView();
+//void				HideWindowsFromView(HWND);
+//void				RestoreWindowsFromView(HWND);
 
 aeroflip::IRendererApi* GetRendererApi(const aeroflip::SRendererConfig* pRendererConfig, HWND hWnd)
 {
@@ -293,7 +294,7 @@ int APIENTRY _tWinMain(
 						{
 							return a.iZOrder < b.iZOrder;
 						});
-						g_pRenderer->OnRender(draws.data(), (UINT)draws.size());
+						g_pRenderer->OnRender(draws.data(), (UINT)draws.size(), g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping);
 					}
 				}
 				else
@@ -369,17 +370,17 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 		return FALSE;
 	}
 
-	if (!RegisterHotKey(hWnd, 1, MOD_CONTROL | MOD_WIN, VK_TAB))
-	{
-		OutputDebugString(L"Failed to register global shortcut!\n");
-		return FALSE;
-	}
-
 	ShowWindow(hWnd, SW_HIDE);
 	MakeWindowTransparent(hWnd);
 	UpdateWindow(hWnd);
 	AddTrayIcon(hWnd);
 
+	// prevent hiding when peeking
+	BOOL policy = TRUE;
+	DwmSetWindowAttribute(hWnd, DWMWA_EXCLUDED_FROM_PEEK, &policy, sizeof(BOOL));
+	DwmSetWindowAttribute(hWnd, DWMWA_DISALLOW_PEEK, &policy, sizeof(BOOL));
+	DwmSetWindowAttribute(hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, &policy, sizeof(BOOL));
+	
 	return TRUE;
 }
 
@@ -463,6 +464,10 @@ void OpenConfigurator(HWND hWnd)
 
 void WakeAeroFlip(HWND hWnd)
 {
+	//if (g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping)
+	//{
+	//	HideWindowsFromView(hWnd);
+	//}
 	if (g_pWindowProvider)
 	{
 		PROFILE_SCOPE(L"Invalidation");
@@ -473,7 +478,6 @@ void WakeAeroFlip(HWND hWnd)
 	ShowWindow(hWnd, SW_SHOW);
 	SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
 	SetForegroundWindow(hWnd);
-	HideWindowsFromView();
 	if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab)
 	{
 		// initial tab requires draw objects to be visible to switch
@@ -490,17 +494,20 @@ void DismissAeroFlip(HWND hWnd, HWND hSelectedApp, BOOL bDesktopBackground)
 	ShowWindow(hWnd, SW_HIDE);
 
 	// reduce memory usage when dismissed
-	EnterCriticalSection(&g_csRendererLock);
 	if (g_pRenderer != NULL)
 	{
-		g_pRenderer->ReleaseWindows();
+		if (!g_AeroFlipCfg.rConfig.bPersistInVRAM)
+		{
+			g_pRenderer->ReleaseWindows();
+		}
 	}
-	LeaveCriticalSection(&g_csRendererLock);
 
 	// clear up RAM	
 	SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
 
-	RestoreWindowsFromView();
+	//// Restore regardless of config, might have changed while flipping was active!
+	//RestoreWindowsFromView(hWnd);
+
 	if (bDesktopBackground)
 	{
 		OutputDebugString(TEXT("Focussing Desktop\n"));
@@ -936,8 +943,7 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 
 	UINT uMaxShowWindows = g_AeroFlipCfg.sConfig.uMaxWindowsVisible;
 
-	FLOAT fLerpFactor = g_AeroFlipCfg.sConfig.iAnimationSpeed * fDeltaTime;
-	if (fLerpFactor > 1.0f) fLerpFactor = 1.0f;
+	FLOAT fLerpFactor = min(g_AeroFlipCfg.sConfig.iAnimationSpeed * fDeltaTime, 1.0f);
 
 	FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
 	FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYSCREEN);
@@ -950,7 +956,7 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		INT iRelativeIndex = (i - (INT)g_uActiveIndex + iNumWindows) % iNumWindows;
 
 		const FLOAT fTargetBaseX = 1.0f;
-		const FLOAT fTargetBaseY = -0.9f;
+		const FLOAT fTargetBaseY = -0.7f;
 		const FLOAT fTargetBaseZ = 3.0f;
 
 		const FLOAT fTargetOffsetX = -g_AeroFlipCfg.sConfig.iHorizontalSpacingMM / 1000.0f;
@@ -974,37 +980,38 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 
 		if (g_bIsDismissing)
 		{
+			FLOAT w = (FLOAT)(window.rcBounds.right - window.rcBounds.left);
+			if (w <= 0)
+			{
+				w = 100.0f;
+			}
+			FLOAT h = (FLOAT)(window.rcBounds.bottom - window.rcBounds.top);
+			if (h <= 0)
+			{
+				h = 100.0f;
+			}
+			FLOAT cx = window.rcBounds.left + w / 2.0f;
+			FLOAT cy = window.rcBounds.top + h / 2.0f;
+
+			fTargetX = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
+			fTargetY = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
+			fTargetZ = 0.04f;
+			fTargetRotY = 0.0f;
+			fTargetOpacity = 1.0f;
+
+			FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
+			fTargetScaleX = matchScale;
+			fTargetScaleY = matchScale;
+
 			if (iRelativeIndex == 0)
 			{
-				FLOAT w = (FLOAT)(window.rcBounds.right - window.rcBounds.left);
-				if (w <= 0)
-				{
-					w = 100.0f;
-				}
-				FLOAT h = (FLOAT)(window.rcBounds.bottom - window.rcBounds.top);
-				if (h <= 0)
-				{
-					h = 100.0f;
-				}
-				FLOAT cx = window.rcBounds.left + w / 2.0f;
-				FLOAT cy = window.rcBounds.top + h / 2.0f;
-
-				fTargetX = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
-				fTargetY = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
-				fTargetZ = 0.04f;
-				fTargetRotY = 0.0f;
-				fTargetOpacity = 1.0f;
-
-				FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
-				fTargetScaleX = matchScale;
-				fTargetScaleY = matchScale;
-
-				window.iZOrder = 999;
 			}
 			else
 			{
-				fTargetOpacity = 0.0f;
-				window.iZOrder = iRelativeIndex;
+				if (!g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping)
+				{
+					fTargetOpacity = 0.0f;
+				}
 			}
 		}
 		else if (iRelativeIndex == (iNumWindows - 1) && g_bIsCycling)
@@ -1128,13 +1135,39 @@ void FocusDesktopViaShell()
 	}
 }
 
-void HideWindowsFromView()
-{
-	if (!g_pWindowProvider)
-	{
-		return;
-	}
-}
-
-void RestoreWindowsFromView()
-{}
+//void HideWindowsFromView(HWND hWnd)
+//{
+//	UINT cWindows = 0;
+//	const aeroflip::SWindowTarget* pWindows = NULL;
+//	g_pWindowProvider->QueryWindows(&pWindows, &cWindows);
+//
+//	for (UINT i = 0; i < cWindows; ++i)
+//	{
+//		if (!pWindows[i].bDesktopWindow)
+//		{
+//			BOOL bCloak = TRUE;
+//			DwmSetWindowAttribute(pWindows[i].hWnd, DWMWA_CLOAK, &bCloak, sizeof(bCloak));
+//		}
+//	}
+//	DwmpActivateLivePreview(TRUE, NULL, hWnd, 3, NULL, 0x3244);
+//}
+//
+//
+//
+//void RestoreWindowsFromView(HWND hWnd)
+//{
+//	UINT cWindows = 0;
+//	const aeroflip::SWindowTarget* pWindows = NULL;
+//	g_pWindowProvider->QueryWindows(&pWindows, &cWindows);
+//
+//	for (UINT i = 0; i < cWindows; ++i)
+//	{
+//		if (!pWindows[i].bDesktopWindow)
+//		{
+//			BOOL bCloak = FALSE;
+//			DwmSetWindowAttribute(pWindows[i].hWnd, DWMWA_CLOAK, &bCloak, sizeof(bCloak));
+//			DwmpActivateLivePreview(FALSE, pWindows[i].hWnd, hWnd, DWMP_WINDOW, NULL, 0x3244);
+//		}
+//	}
+//	DwmpActivateLivePreview(FALSE, NULL, hWnd, 30, NULL, 0x3244);
+//}

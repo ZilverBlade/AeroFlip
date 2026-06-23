@@ -11,6 +11,6 @@ namespace aeroflip
 		}
 		virtual void UpdateWindows(class CWindowProvider* pWindowProvider) = NULL;
 		virtual void ReleaseWindows() = NULL;
-		virtual void OnRender(const struct SWindowDrawObject* pWindows, UINT cWindows) = NULL;
+		virtual void OnRender(const struct SWindowDrawObject* pWindows, UINT cWindows, BOOL bRenderDesktopFullScreen) = NULL;
 	};
 }

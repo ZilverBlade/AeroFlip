@@ -11,6 +11,7 @@ namespace aeroflip
 	{
 		BOOL bHardwareAcceleration;
 		BOOL bLiveCapture;
+		BOOL bPersistInVRAM;
 		BOOL bVSync;
 
 		UINT uMultiSampleLevel;
@@ -22,6 +23,7 @@ namespace aeroflip
 		{
 			bHardwareAcceleration = TRUE;
 			bLiveCapture = FALSE;
+			bPersistInVRAM = TRUE;
 			bVSync = TRUE;
 
 			uMultiSampleLevel = 4;
