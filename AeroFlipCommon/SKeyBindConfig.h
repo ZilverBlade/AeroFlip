@@ -17,7 +17,7 @@ namespace aeroflip
 		{
 			bShiftToMoveBack = TRUE;
 			bCycleOnFirstTab = FALSE;
-			dwFlipShortcutMode = eFSM_ALT_TAB;
+			dwFlipShortcutMode = eFSM_WIN_TAB;
 		}
 	};
 }

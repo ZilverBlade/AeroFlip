@@ -208,15 +208,33 @@ int APIENTRY _tWinMain(
 			{
 				if (IsWindowVisible(hWnd))
 				{
-					bool bAltHeld = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+					BOOL bDismissTriggered = FALSE;
 
-					if (!bAltHeld)
+					if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_WIN_TAB)
 					{
-						if (!g_bIsDismissing)
-						{
-							g_bIsDismissing = TRUE;
-						}
+						// In Win+Tab mode, dismissal is handled directly in LowLevelKeyboardProc asynchronously
+						bDismissTriggered = g_bIsDismissing;
+					}
+					else
+					{
+						BOOL bAltHeld = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
 
+						if (!bAltHeld)
+						{
+							if (!g_bIsDismissing)
+							{
+								g_bIsDismissing = TRUE;
+							}
+							bDismissTriggered = TRUE;
+						}
+						else
+						{
+							g_bIsDismissing = FALSE;
+						}
+					}
+
+					if (bDismissTriggered)
+					{
 						BOOL bDismissComplete = FALSE;
 						if (g_DrawObjects.empty() || g_uActiveIndex >= (UINT)g_DrawObjects.size())
 						{
@@ -246,13 +264,13 @@ int APIENTRY _tWinMain(
 
 							DismissAeroFlip(hWnd, hTargetApp, bDesktop);
 							g_bIsDismissing = FALSE;
-							GetAsyncKeyState(VK_MENU);
+
+							if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode != aeroflip::eFSM_WIN_TAB)
+							{
+								GetAsyncKeyState(VK_MENU);
+							}
 							continue;
 						}
-					}
-					else
-					{
-						g_bIsDismissing = FALSE;
 					}
 
 					if (g_bWindowListDirty)
@@ -299,9 +317,9 @@ int APIENTRY _tWinMain(
 				}
 				else
 				{
+					Sleep(10);
 					// Reset frame timestamps when inactive to skip processing gaps when woken back up
 					QueryPerformanceCounter(&g_liLastTime);
-					Sleep(10);
 				}
 			}
 		}
@@ -380,7 +398,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 	DwmSetWindowAttribute(hWnd, DWMWA_EXCLUDED_FROM_PEEK, &policy, sizeof(BOOL));
 	DwmSetWindowAttribute(hWnd, DWMWA_DISALLOW_PEEK, &policy, sizeof(BOOL));
 	DwmSetWindowAttribute(hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, &policy, sizeof(BOOL));
-	
+
 	return TRUE;
 }
 
@@ -781,89 +799,155 @@ void CALLBACK WinEventProc(
 		break;
 	}
 }
+
+void FlipWindow()
+{
+	if (!g_DrawObjects.empty())
+	{
+		bool bShiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+		if (bShiftPressed && g_AeroFlipCfg.kbConfig.bShiftToMoveBack)
+		{
+			g_uActiveIndex = (g_uActiveIndex + g_DrawObjects.size() - 1) % (UINT)g_DrawObjects.size();
+		}
+		else
+		{
+			g_uActiveIndex = (g_uActiveIndex + 1) % (UINT)g_DrawObjects.size();
+		}
+		g_bIsCycling = TRUE;
+	}
+}
+
+void TriggerAeroFlipActivation(HWND hWnd)
+{
+	g_bWindowListDirty = TRUE;
+	g_hLastActiveWindow = GetForegroundWindow();
+
+	if (g_hLastActiveWindow != hWnd)
+	{
+		g_pWindowProvider->FlagActiveWindow(g_hLastActiveWindow);
+	}
+
+	UINT cWindows = 0;
+	const aeroflip::SWindowTarget* pWindows = NULL;
+
+	g_pWindowProvider->QueryWindows(&pWindows, &cWindows);
+
+	BOOL bFoundActiveWindow = FALSE;
+	for (UINT i = 0; i < cWindows; ++i)
+	{
+		if (pWindows[i].hWnd == g_hLastActiveWindow)
+		{
+			g_uActiveIndex = i;
+			bFoundActiveWindow = TRUE;
+			break;
+		}
+	}
+
+	if (!bFoundActiveWindow && cWindows > 0)
+	{
+		g_uActiveIndex = 0;
+		g_hLastActiveWindow = pWindows[0].hWnd;
+	}
+
+	WakeAeroFlip(hWnd);
+}
+
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
 	if (nCode == HC_ACTION)
 	{
 		KBDLLHOOKSTRUCT* pKeyStruct = (KBDLLHOOKSTRUCT*)lParam;
+		HWND hWnd = FindWindow(g_szWindowClass, g_szTitle);
+		BOOL bAeroFlipActive = IsWindowVisible(hWnd);
 
-		if (pKeyStruct->vkCode == VK_TAB)
+		if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_WIN_TAB)
 		{
-			bool bAltPressed = (pKeyStruct->flags & LLKHF_ALTDOWN) != 0;
+			BOOL bWinDown = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
 
-			if (bAltPressed)
+			if (pKeyStruct->vkCode == VK_TAB && bAeroFlipActive)
 			{
-				if (wParam == WM_SYSKEYDOWN)
+				if (wParam == WM_KEYDOWN)
 				{
-					HWND hWnd = FindWindow(g_szWindowClass, g_szTitle);
-
-					if (!g_bIsDismissing)
-					{
-						BOOL bSecondTab = FALSE;
-						if (!IsWindowVisible(hWnd))
-						{
-							g_bWindowListDirty = TRUE;
-							g_hLastActiveWindow = GetForegroundWindow();
-
-							if (g_hLastActiveWindow != hWnd)
-							{
-								g_pWindowProvider->FlagActiveWindow(g_hLastActiveWindow);
-							}
-
-							UINT cWindows = 0;
-							const aeroflip::SWindowTarget* pWindows = NULL;
-
-							g_pWindowProvider->QueryWindows(&pWindows, &cWindows);
-
-							BOOL bFoundActiveWindow = FALSE;
-							for (UINT i = 0; i < cWindows; ++i)
-							{
-								if (pWindows[i].hWnd == g_hLastActiveWindow)
-								{
-									g_uActiveIndex = i;
-									bFoundActiveWindow = TRUE;
-									break;
-								}
-							}
-
-							if (!bFoundActiveWindow)
-							{
-								g_uActiveIndex = 0;
-								g_hLastActiveWindow = pWindows[0].hWnd;
-							}
-
-							WakeAeroFlip(hWnd);
-						}
-						else
-						{
-							bSecondTab = TRUE;
-						}
-						if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab || bSecondTab)
-						{
-							// Cycle target indexing forwards
-							if (!g_DrawObjects.empty())
-							{
-								BOOL bShiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-
-								if (bShiftPressed && g_AeroFlipCfg.kbConfig.bShiftToMoveBack)
-								{
-									g_uActiveIndex = (g_uActiveIndex + g_DrawObjects.size() - 1) % (UINT)g_DrawObjects.size();
-								}
-								else
-								{
-									g_uActiveIndex = (g_uActiveIndex + 1) % (UINT)g_DrawObjects.size();
-								}
-
-								g_bIsCycling = TRUE;
-							}
-						}
-					}
-					return 1;
+					FlipWindow();
 				}
+				return 1; // Suppress built-in system task cycling
+			}
 
-				if (wParam == WM_SYSKEYUP)
+			if (pKeyStruct->vkCode == VK_TAB && bWinDown && !bAeroFlipActive)
+			{
+				if (wParam == WM_KEYDOWN)
 				{
-					return 1;
+					TriggerAeroFlipActivation(hWnd);
+
+					if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab)
+					{
+						FlipWindow();
+					}
+				}
+				return 1;
+			}
+
+			// Trap Windows keys to dismiss if window is open
+			if (pKeyStruct->vkCode == VK_LWIN || pKeyStruct->vkCode == VK_RWIN)
+			{
+				if (bAeroFlipActive)
+				{
+					if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
+					{
+						return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+					}
+
+					if (wParam == WM_KEYDOWN)
+					{
+						g_bIsDismissing = !g_bIsDismissing;
+						return 1;
+					}
+				}
+			}
+		}
+		else if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_ALT_TAB)
+		{
+			if (pKeyStruct->vkCode == VK_TAB)
+			{
+				BOOL bAltPressed = (pKeyStruct->flags & LLKHF_ALTDOWN) != 0;
+				if (bAltPressed)
+				{
+					if (wParam == WM_SYSKEYDOWN)
+					{
+						if (!g_bIsDismissing)
+						{
+							BOOL bSecondTab = FALSE;
+							if (!bAeroFlipActive)
+							{
+								TriggerAeroFlipActivation(hWnd);
+							}
+							else
+							{
+								bSecondTab = TRUE;
+							}
+
+							if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab || bSecondTab)
+							{
+								FlipWindow();
+							}
+						}
+						return 1;
+					}
+
+					if (wParam == WM_SYSKEYUP)
+					{
+						return 1;
+					}
+				}
+			}
+
+			// prevent keys from being sticky
+			if ((pKeyStruct->vkCode == VK_LMENU || pKeyStruct->vkCode == VK_RMENU || pKeyStruct->vkCode == VK_MENU))
+			{
+				if (bAeroFlipActive && (wParam == WM_KEYUP || wParam == WM_SYSKEYUP))
+				{
+					g_bIsDismissing = TRUE;
+					return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
 				}
 			}
 		}
