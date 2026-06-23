@@ -160,49 +160,6 @@ int APIENTRY _tWinMain(
 			{
 				TranslateMessage(&msg);
 				DispatchMessage(&msg);
-
-				if (msg.message == WM_HOTKEY && msg.wParam == 1)
-				{
-					HWND hLastActiveWindow = GetForegroundWindow();
-
-					g_pWindowProvider->UpdateWindowList();
-					if (hLastActiveWindow != hWnd)
-					{
-						g_pWindowProvider->FlagActiveWindow(hLastActiveWindow);
-					}
-
-					g_uActiveIndex = 0;
-
-					BOOL bAnyWindowFocused = FALSE;
-					INT iDesktopIndex = -1;
-
-					for (size_t idx = 0; idx < g_DrawObjects.size(); ++idx)
-					{
-
-						if (g_DrawObjects[idx].bDesktopBg)
-						{
-							iDesktopIndex = (INT)idx;
-						}
-						else if (g_DrawObjects[idx].hTargetWnd == g_hLastActiveWindow)
-						{
-							bAnyWindowFocused = TRUE;
-						}
-					}
-
-					if (!bAnyWindowFocused && iDesktopIndex != -1)
-					{
-						g_uActiveIndex = (UINT)iDesktopIndex;
-					}
-
-					if (g_bIsDismissing)
-					{
-						g_bIsDismissing = FALSE;
-					}
-					else
-					{
-						WakeAeroFlip(hWnd);
-					}
-				}
 			}
 			else
 			{
@@ -833,9 +790,15 @@ void TriggerAeroFlipActivation(HWND hWnd)
 	g_pWindowProvider->QueryWindows(&pWindows, &cWindows);
 
 	BOOL bFoundActiveWindow = FALSE;
+	INT iDesktopIndex = -1;
+
 	for (UINT i = 0; i < cWindows; ++i)
 	{
-		if (pWindows[i].hWnd == g_hLastActiveWindow)
+		if (pWindows[i].bDesktopWindow)
+		{
+			iDesktopIndex = i;
+		}
+		else if (pWindows[i].hWnd == g_hLastActiveWindow)
 		{
 			g_uActiveIndex = i;
 			bFoundActiveWindow = TRUE;
@@ -843,7 +806,12 @@ void TriggerAeroFlipActivation(HWND hWnd)
 		}
 	}
 
-	if (!bFoundActiveWindow && cWindows > 0)
+	if (!bFoundActiveWindow && iDesktopIndex != -1)
+	{
+		g_uActiveIndex = (UINT)iDesktopIndex;
+		g_hLastActiveWindow = NULL;
+	}
+	else if (!bFoundActiveWindow && cWindows > 0)
 	{
 		g_uActiveIndex = 0;
 		g_hLastActiveWindow = pWindows[0].hWnd;
@@ -877,6 +845,11 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 			{
 				if (wParam == WM_KEYDOWN)
 				{
+					INPUT input = { 0 };
+					input.type = INPUT_KEYBOARD;
+					input.ki.wVk = VK_NONAME;
+					SendInput(1, &input, sizeof(INPUT));
+
 					TriggerAeroFlipActivation(hWnd);
 
 					if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab)
