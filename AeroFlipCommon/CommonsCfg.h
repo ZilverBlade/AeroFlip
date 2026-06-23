@@ -67,8 +67,10 @@ ReadIniCfg(kk, vv); } while (0)
 	{
 #define IniSection TEXT("Style")
 		DefIniCfg(nMode, TEXT("RenderWindowBorders"), &pCfg->sConfig.bRenderWindowBorders);
+		DefIniCfg(nMode, TEXT("MaxWindowsVisible"), &pCfg->sConfig.uMaxWindowsVisible);
 		DefIniCfg(nMode, TEXT("HorizontalSpacingMM"), &pCfg->sConfig.iHorizontalSpacingMM);
 		DefIniCfg(nMode, TEXT("VerticalSpacingMM"), &pCfg->sConfig.iVerticalSpacingMM);
+		DefIniCfg(nMode, TEXT("AnimationSpeed"), &pCfg->sConfig.iAnimationSpeed);
 #undef IniSection 
 	}
 

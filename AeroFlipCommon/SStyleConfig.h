@@ -6,18 +6,29 @@
 
 namespace aeroflip
 {
+#define kAS_SLOW 5
+#define kAS_NORMAL 12
+#define kAS_FAST 24
+
 	struct SStyleConfig
 	{
 		BOOL bRenderWindowBorders;
 
+		UINT uMaxWindowsVisible;
+
 		INT iHorizontalSpacingMM;
 		INT iVerticalSpacingMM;
+
+		INT iAnimationSpeed;
+
 
 		void InitDefault()
 		{
 			bRenderWindowBorders = TRUE;
+			uMaxWindowsVisible = 5;
 			iHorizontalSpacingMM = 1200;
 			iVerticalSpacingMM = 1200;
+			iAnimationSpeed = kAS_NORMAL;
 		}
 	};
 }

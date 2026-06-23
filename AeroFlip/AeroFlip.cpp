@@ -490,13 +490,13 @@ void DismissAeroFlip(HWND hWnd, HWND hSelectedApp, BOOL bDesktopBackground)
 	ShowWindow(hWnd, SW_HIDE);
 
 	// reduce memory usage when dismissed
-	EnterCriticalSection(&g_csRendererLock); 
+	EnterCriticalSection(&g_csRendererLock);
 	if (g_pRenderer != NULL)
 	{
 		g_pRenderer->ReleaseWindows();
 	}
 	LeaveCriticalSection(&g_csRendererLock);
-	
+
 	// clear up RAM	
 	SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
 
@@ -870,7 +870,7 @@ DWORD WINAPI ConfigFileWatcherThread(LPVOID lpParam)
 	HWND hWndMain = (HWND)lpParam;
 	UNREFERENCED_PARAMETER(hWndMain);
 
-	std::wstring fullPath = aeroflip::GetConfigIniPath(); 
+	std::wstring fullPath = aeroflip::GetConfigIniPath();
 	size_t lastSlash = fullPath.find_last_of(L"\\/");
 	if (lastSlash == std::wstring::npos) return 0;
 
@@ -934,9 +934,9 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		return;
 	}
 
-	const UINT uMaxShowWindows = 5;
+	UINT uMaxShowWindows = g_AeroFlipCfg.sConfig.uMaxWindowsVisible;
 
-	FLOAT fLerpFactor = 12.0f * fDeltaTime;
+	FLOAT fLerpFactor = g_AeroFlipCfg.sConfig.iAnimationSpeed * fDeltaTime;
 	if (fLerpFactor > 1.0f) fLerpFactor = 1.0f;
 
 	FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
@@ -948,7 +948,6 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 	{
 		auto& window = g_DrawObjects[i];
 		INT iRelativeIndex = (i - (INT)g_uActiveIndex + iNumWindows) % iNumWindows;
-
 
 		const FLOAT fTargetBaseX = 1.0f;
 		const FLOAT fTargetBaseY = -0.9f;
@@ -965,7 +964,7 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		FLOAT fTargetRotY = -30.0f;
 		FLOAT fTargetOpacity = 1.0f;
 
-		if (iRelativeIndex >= uMaxShowWindows)
+		if (iRelativeIndex >= (INT)uMaxShowWindows)
 		{
 			fTargetOpacity = max(0.0f, 0.75f - 0.25f * (iRelativeIndex - uMaxShowWindows));
 		}

@@ -8,6 +8,7 @@ namespace aeroflip
 	{
 		eWDOMM_DEFAULT = 0,
 		eWDOMM_MOVING_TO_BACK = 1,
+		eWDOMM_MOVING_TO_FRONT = 2,
 
 		eWDOMM_MAX_ENUM = 0x7fffffff
 	};

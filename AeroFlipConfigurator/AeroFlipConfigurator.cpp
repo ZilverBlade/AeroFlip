@@ -18,11 +18,13 @@
 #define MAX_LOADSTRING 100
 
 // Global Variables:
-HINSTANCE hInst;                                // current instance
-TCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
+HINSTANCE g_hInst;                                // current instance
+TCHAR g_szTitle[MAX_LOADSTRING];                  // The title bar text
+TCHAR g_szInstallPageUrl[MAX_LOADSTRING];         // The install page iurl
 
 // Global State
 aeroflip::SAeroFlipConfig g_AeroFlipCfg;
+BOOL g_bDirtyChanges = FALSE;
 
 // Forward declarations of functions included in this code module:
 INT_PTR CALLBACK    MasterDlgProc(HWND, UINT, WPARAM, LPARAM);
@@ -45,6 +47,7 @@ void				OnCbnRendererModeSelect(const SWndEvent* pEvent, int nSelection);
 void				OnCbnMsaaQualitySelect(const SWndEvent* pEvent, int nSelection);
 void				OnCbnTextureQualitySelect(const SWndEvent* pEvent, int nSelection);
 void				OnCbnShortcutSelect(const SWndEvent* pEvent, int nSelection);
+void				OnCbnAnimSpeedSelect(const SWndEvent* pEvent, int nSelection);
 
 DWORD GetProcessIdByName(LPCTSTR lpszProcessName)
 {
@@ -199,10 +202,11 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
 
 	InitCommonControls();
 
-	hInst = hInstance;
+	g_hInst = hInstance;
 	MSG msg;
 
-	LoadString(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
+	LoadString(hInstance, IDS_APP_TITLE, g_szTitle, MAX_LOADSTRING);
+	LoadString(hInstance, IDS_INSTALL_URL, g_szInstallPageUrl, MAX_LOADSTRING);
 
 	HWND hDlg = CreateDialog(hInstance, MAKEINTRESOURCE(IDD_MASTERFORM), NULL, MasterDlgProc);
 
@@ -235,6 +239,7 @@ INT_PTR CALLBACK MasterDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 	case WM_INITDIALOG:
 	{
 		SendDlgItemMessage(hDlg, IDC_RENDERER_MODE, CB_ADDSTRING, 0, (LPARAM)_T("D3D9Ex"));
+		//SendDlgItemMessage(hDlg, IDC_RENDERER_MODE, CB_ADDSTRING, 0, (LPARAM)_T("D3D11 (WGC)"));
 
 		SendDlgItemMessage(hDlg, IDC_MSAA_QUALITY, CB_ADDSTRING, 0, (LPARAM)_T("1x"));
 		SendDlgItemMessage(hDlg, IDC_MSAA_QUALITY, CB_ADDSTRING, 0, (LPARAM)_T("2x"));
@@ -248,6 +253,14 @@ INT_PTR CALLBACK MasterDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 
 		SendDlgItemMessage(hDlg, IDC_SHORTCUT_MODE, CB_ADDSTRING, 0, (LPARAM)_T("Alt+Tab"));
 		SendDlgItemMessage(hDlg, IDC_SHORTCUT_MODE, CB_ADDSTRING, 0, (LPARAM)_T("Win+Tab"));
+
+		SendDlgItemMessage(hDlg, IDC_ANIM_SPEED, CB_ADDSTRING, 0, (LPARAM)_T("Slow"));
+		SendDlgItemMessage(hDlg, IDC_ANIM_SPEED, CB_ADDSTRING, 0, (LPARAM)_T("Normal"));
+		SendDlgItemMessage(hDlg, IDC_ANIM_SPEED, CB_ADDSTRING, 0, (LPARAM)_T("Fast"));
+
+		SendDlgItemMessage(hDlg, IDC_MAX_WINDOWS_VISIBLE, EM_SETLIMITTEXT, 1, 0);
+		SendDlgItemMessage(hDlg, IDC_HORIZONTAL_SPACING, EM_SETLIMITTEXT, 4, 0);
+		SendDlgItemMessage(hDlg, IDC_VERTICAL_SPACING, EM_SETLIMITTEXT, 4, 0);
 
 		SynchronizeDialog(hDlg);
 
@@ -280,13 +293,16 @@ INT_PTR CALLBACK MasterDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 			case IDC_SHORTCUT_MODE:
 				OnCbnShortcutSelect(&event, sel);
 				return (INT_PTR)TRUE;
+			case IDC_ANIM_SPEED:
+				OnCbnAnimSpeedSelect(&event, sel);
+				return (INT_PTR)TRUE;
 			}
 		}
 
 		switch (wmId)
 		{
 		case IDM_ABOUT:
-			DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hDlg, About);
+			DialogBox(g_hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hDlg, About);
 			return (INT_PTR)TRUE;
 		case IDM_START:
 			LaunchAeroFlipProcess();
@@ -294,7 +310,9 @@ INT_PTR CALLBACK MasterDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 		case IDM_EXIT:
 			TerminateAeroFlipProcess();
 			return (INT_PTR)TRUE;
-
+		case IDM_INSTALL_PAGE:
+			ShellExecute(NULL, TEXT("open"), g_szInstallPageUrl, NULL, NULL, SW_SHOWNORMAL);
+			break;
 		case IDC_APPLY:
 			OnBtnApply(&event);
 			return (INT_PTR)TRUE;
@@ -304,6 +322,11 @@ INT_PTR CALLBACK MasterDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 		case IDC_CLOSE:
 			OnBtnClose(&event);
 			return (INT_PTR)TRUE;
+
+		default: // Rest of control inputs
+			g_bDirtyChanges = TRUE;
+			EnableWindow(GetDlgItem(hDlg, IDC_APPLY), TRUE);
+			break;
 		}
 	}
 	break;
@@ -370,6 +393,26 @@ void SynchronizeDialog(HWND hDlg)
 	// Style
 	{
 		SendDlgItemMessage(hDlg, IDC_RENDER_WINDOW_BORDERS, BM_SETCHECK, g_AeroFlipCfg.sConfig.bRenderWindowBorders ? 1 : 0, 0);
+
+		SendDlgItemMessage(hDlg, IDC_MAX_WINDOWS_VISIBLE, EM_REPLACESEL, 0,
+			(LPARAM)(std::to_wstring(g_AeroFlipCfg.sConfig.uMaxWindowsVisible).c_str()));
+		SendDlgItemMessage(hDlg, IDC_HORIZONTAL_SPACING, EM_REPLACESEL, 0,
+			(LPARAM)(std::to_wstring(g_AeroFlipCfg.sConfig.iHorizontalSpacingMM).c_str()));
+		SendDlgItemMessage(hDlg, IDC_VERTICAL_SPACING, EM_REPLACESEL, 0,
+			(LPARAM)(std::to_wstring(g_AeroFlipCfg.sConfig.iVerticalSpacingMM).c_str()));
+
+		switch (g_AeroFlipCfg.sConfig.iAnimationSpeed)
+		{
+		case kAS_SLOW:
+			SendDlgItemMessage(hDlg, IDC_ANIM_SPEED, CB_SETCURSEL, 0, 0);
+			break;
+		case kAS_NORMAL:
+			SendDlgItemMessage(hDlg, IDC_ANIM_SPEED, CB_SETCURSEL, 1, 0);
+			break;
+		case kAS_FAST:
+			SendDlgItemMessage(hDlg, IDC_ANIM_SPEED, CB_SETCURSEL, 2, 0);
+			break;
+		}
 	}
 
 	// Renderer
@@ -402,6 +445,9 @@ void SynchronizeDialog(HWND hDlg)
 		case aeroflip::eRM_D3D9_EX:
 			SendDlgItemMessage(hDlg, IDC_RENDERER_MODE, CB_SETCURSEL, 0, 0);
 			break;
+			//case aeroflip::eRM_D3D11:
+			//	SendDlgItemMessage(hDlg, IDC_RENDERER_MODE, CB_SETCURSEL, 1, 0);
+			//	break;
 		}
 
 		switch (g_AeroFlipCfg.rConfig.dwTextureQuality)
@@ -426,25 +472,41 @@ void OnBtnOk(const SWndEvent* pEvent)
 }
 void OnBtnApply(const SWndEvent* pEvent)
 {
-	g_AeroFlipCfg.kbConfig.bCycleOnFirstTab =
-		(SendDlgItemMessage(pEvent->hDlg, IDC_CYCLE_ON_FIRST_TAB, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	if (g_bDirtyChanges)
+	{
+		g_AeroFlipCfg.kbConfig.bCycleOnFirstTab =
+			(SendDlgItemMessage(pEvent->hDlg, IDC_CYCLE_ON_FIRST_TAB, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-	g_AeroFlipCfg.kbConfig.bShiftToMoveBack =
-		(SendDlgItemMessage(pEvent->hDlg, IDC_SHIFT_TO_MOVE_BACK, BM_GETCHECK, 0, 0) == BST_CHECKED);
+		g_AeroFlipCfg.kbConfig.bShiftToMoveBack =
+			(SendDlgItemMessage(pEvent->hDlg, IDC_SHIFT_TO_MOVE_BACK, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-	g_AeroFlipCfg.sConfig.bRenderWindowBorders =
-		(SendDlgItemMessage(pEvent->hDlg, IDC_RENDER_WINDOW_BORDERS, BM_GETCHECK, 0, 0) == BST_CHECKED);
+		g_AeroFlipCfg.sConfig.bRenderWindowBorders =
+			(SendDlgItemMessage(pEvent->hDlg, IDC_RENDER_WINDOW_BORDERS, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-	g_AeroFlipCfg.rConfig.bHardwareAcceleration =
-		(SendDlgItemMessage(pEvent->hDlg, IDC_HARDWARE_ACCELERATION, BM_GETCHECK, 0, 0) == BST_CHECKED);
+		g_AeroFlipCfg.rConfig.bHardwareAcceleration =
+			(SendDlgItemMessage(pEvent->hDlg, IDC_HARDWARE_ACCELERATION, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-	g_AeroFlipCfg.rConfig.bLiveCapture =
-		(SendDlgItemMessage(pEvent->hDlg, IDC_LIVE_CAPTURE, BM_GETCHECK, 0, 0) == BST_CHECKED);
+		g_AeroFlipCfg.rConfig.bLiveCapture =
+			(SendDlgItemMessage(pEvent->hDlg, IDC_LIVE_CAPTURE, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-	g_AeroFlipCfg.rConfig.bVSync =
-		(SendDlgItemMessage(pEvent->hDlg, IDC_VSYNC, BM_GETCHECK, 0, 0) == BST_CHECKED);
+		g_AeroFlipCfg.rConfig.bVSync =
+			(SendDlgItemMessage(pEvent->hDlg, IDC_VSYNC, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-	StoreConfig();
+		TCHAR buf[8];
+		ZeroMemory(&buf, sizeof(buf));
+		*(WORD*)buf = 8;
+
+		SendDlgItemMessage(pEvent->hDlg, IDC_MAX_WINDOWS_VISIBLE, EM_GETLINE, 0, (LPARAM)buf);
+		g_AeroFlipCfg.sConfig.uMaxWindowsVisible = max((UINT)_tstoi(buf), 1); // at least 1 window!
+		SendDlgItemMessage(pEvent->hDlg, IDC_HORIZONTAL_SPACING, EM_GETLINE, 0, (LPARAM)buf);
+		g_AeroFlipCfg.sConfig.iHorizontalSpacingMM = _tstoi(buf);
+		SendDlgItemMessage(pEvent->hDlg, IDC_VERTICAL_SPACING, EM_GETLINE, 0, (LPARAM)buf);
+		g_AeroFlipCfg.sConfig.iVerticalSpacingMM = _tstoi(buf);
+
+		StoreConfig();
+	}
+	EnableWindow(GetDlgItem(pEvent->hDlg, IDC_APPLY), FALSE);
+	g_bDirtyChanges = FALSE;
 }
 void OnBtnClose(const SWndEvent* pEvent)
 {
@@ -459,6 +521,9 @@ void OnCbnRendererModeSelect(const SWndEvent* pEvent, int nSelection)
 	case 0:
 		g_AeroFlipCfg.rConfig.dwRendererMode = aeroflip::eRM_D3D9_EX;
 		break;
+		//case 1:
+		//	g_AeroFlipCfg.rConfig.dwRendererMode = aeroflip::eRM_D3D11;
+		//	break;
 	}
 }
 
@@ -512,6 +577,23 @@ void OnCbnShortcutSelect(const SWndEvent* pEvent, int nSelection)
 		break;
 	case 1:
 		g_AeroFlipCfg.kbConfig.dwFlipShortcutMode = aeroflip::eFSM_WIN_TAB;
+		break;
+	}
+}
+
+void OnCbnAnimSpeedSelect(const SWndEvent* pEvent, int nSelection)
+{
+	UNREFERENCED_PARAMETER(pEvent);
+	switch (nSelection)
+	{
+	case 0:
+		g_AeroFlipCfg.sConfig.iAnimationSpeed = kAS_SLOW;
+		break;
+	case 1:
+		g_AeroFlipCfg.sConfig.iAnimationSpeed = kAS_NORMAL;
+		break;
+	case 2:
+		g_AeroFlipCfg.sConfig.iAnimationSpeed = kAS_FAST;
 		break;
 	}
 }
