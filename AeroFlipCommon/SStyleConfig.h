@@ -24,7 +24,8 @@ namespace aeroflip
 
 		void InitDefault()
 		{
-			bShowDesktopWhenFlipping = TRUE;
+			// FIXME: disabled until multi monitor setup works!
+			bShowDesktopWhenFlipping = FALSE;
 			bRenderWindowBorders = TRUE;
 			uMaxWindowsVisible = 5;
 			iHorizontalSpacingMM = 1200;
