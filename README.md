@@ -28,3 +28,7 @@ _(Running on Windows 10, using other styling tools such as [RetroBar](https://gi
 ## Implementation
 
 _AeroFlip_ uses D3D9Ex to render the virtual Flip environment, and overlays it as a topmost window. It uses `uiAccess=true` in the manifest file to ensure the application always intercepts keybinds, and overlays on top of all windows (including task manager); for this reason the installer comes with a signing script that signs the executable.
+
+## Known bugs:
+
+* When using multiple monitors, the flip mode stays on the primary monitor.
