@@ -68,15 +68,12 @@ namespace aeroflip
 		}
 	}
 
-	HRESULT CaptureWindowToTexture(const SWindowTarget* pTarget, IDirect3DDevice9Ex* pDevice, IDirect3DTexture9** ppTexture)
+	HRESULT CaptureWindowToTexture(const SWindowTarget* pTarget, IDirect3DDevice9Ex* pDevice, IDirect3DTexture9** ppTexture, BOOL bMipMaps)
 	{
 		HWND hTargetWnd = pTarget->hWnd;
 		UINT width = 0;
 		UINT height = 0;
 		BOOL bUseRAMCache = (pTarget->bMinimized && pTarget->pCachedPixels != NULL);
-
-		// mip maps are super slow :/
-		const BOOL bMipMaps = FALSE;
 
 		if (bUseRAMCache)
 		{
@@ -138,7 +135,7 @@ namespace aeroflip
 			SafeRelease(*ppTexture);
 
 			HRESULT hr = pDevice->CreateTexture(width, height, bMipMaps ? 0 : 1,
-				D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
+				D3DUSAGE_DYNAMIC | (bMipMaps ? D3DUSAGE_AUTOGENMIPMAP : 0), D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
 				ppTexture, NULL);
 
 			if (FAILED(hr)) return hr;
@@ -205,7 +202,8 @@ namespace aeroflip
 
 		if (bMipMaps)
 		{
-			DEVICE_CALL(D3DXFilterTexture(*ppTexture, NULL, 0, D3DX_DEFAULT));
+			(*ppTexture)->SetAutoGenFilterType(D3DTEXF_LINEAR);
+			(*ppTexture)->GenerateMipSubLevels();
 		}
 		return S_OK;
 	}
@@ -227,10 +225,10 @@ namespace aeroflip
 		pDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, verts, sizeof(SVertex3D));
 	}
 
-	CD3D9ExRendererApi::CD3D9ExRendererApi(const SD3D9ExRendererApiConfig* pConfig)
-		: m_hWindow(pConfig->hWnd)
+	CD3D9ExRendererApi::CD3D9ExRendererApi(const SRendererConfig* pConfig, HWND hWnd)
+		: m_hWindow(hWnd)
 	{
-		ZeroMemory(&m_Settings, sizeof(SRendererSettings));
+		memcpy(&m_Config, pConfig, sizeof(SRendererConfig));
 
 		InitD3D9Ex();
 
@@ -246,7 +244,7 @@ namespace aeroflip
 			uAdapter = USelectD3D9ExSoftwareAdapter(&devType);
 		}
 
-		CreateD3D9ExDevice(uAdapter, devType, pConfig->hWnd, pConfig->uMultiSampleLevel);
+		CreateD3D9ExDevice(uAdapter, devType, hWnd, pConfig->uMultiSampleLevel);
 
 		HINSTANCE hInst = GetModuleHandle(NULL);
 		LoadBorderTextures(m_pD3D9ExDevice, hInst);
@@ -272,7 +270,7 @@ namespace aeroflip
 		const UINT uMaxCapturesPerFrame = 1;
 
 		HWND hCandidateLiveUpdateWindow = NULL;
-		if (m_Settings.bLiveCapture)
+		if (m_Config.bLiveCapture)
 		{
 			if (!m_WindowTextureMap.empty())
 			{
@@ -334,10 +332,11 @@ namespace aeroflip
 				pTexturePair = &it->second;
 			}
 
-			if (pTarget->bNeedsUpdate && uTexturesCapturedThisFrame < uMaxCapturesPerFrame ||
+			if (pTarget->bNeedsUpdate && (uTexturesCapturedThisFrame < uMaxCapturesPerFrame || pTarget->bDesktopWindow) ||
 				(!pTarget->bMinimized && hCandidateLiveUpdateWindow == pTarget->hWnd))
 			{
-				if (SUCCEEDED(CaptureWindowToTexture(pTarget, m_pD3D9ExDevice, &pTexturePair->pD3D9Texture)))
+				if (SUCCEEDED(CaptureWindowToTexture(pTarget, m_pD3D9ExDevice, &pTexturePair->pD3D9Texture,
+					m_Config.dwTextureQuality == eTQ_SMOOTH_MIP)))
 				{
 					pWindowProvider->MarkWindowUpdated(hTargetWnd);
 					uTexturesCapturedThisFrame++;
@@ -381,7 +380,7 @@ namespace aeroflip
 		ResetD3D9ExDevice();
 	}
 
-	void CD3D9ExRendererApi::OnRender(const SWindowDrawObject* pWindows, UINT cWindows)
+	void CD3D9ExRendererApi::OnRender(const SWindowDrawObject* pWindows, UINT cWindows, BOOL bRenderDesktopFullScreen)
 	{
 		if (!m_pD3D9ExDevice) return;
 
@@ -408,10 +407,28 @@ namespace aeroflip
 			DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE));
 
 			// TODO, maybe quality setting?
-			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAXANISOTROPY, 7));
-			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_ANISOTROPIC));
-			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_ANISOTROPIC));
-			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR));
+
+			if (m_Config.dwTextureQuality == eTQ_NEAREST)
+			{
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAXANISOTROPY, 0));
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_POINT));
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT));
+			}
+			else
+			{
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAXANISOTROPY, 7));
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_ANISOTROPIC));
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_ANISOTROPIC));
+			}
+			if (m_Config.dwTextureQuality == eTQ_SMOOTH_MIP)
+			{
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR));
+			}
+			else
+			{
+				DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE));
+			}
+
 			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP));
 			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP));
 			DEVICE_CALL(m_pD3D9ExDevice->SetSamplerState(0, D3DSAMP_ADDRESSW, D3DTADDRESS_CLAMP));
@@ -431,99 +448,49 @@ namespace aeroflip
 			D3DXMatrixLookAtLH(&matView, &origin, &target, &up);
 			DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));
 
+			if (bRenderDesktopFullScreen)
+			{
+				for (INT i = static_cast<INT>(cWindows)-1; i >= 0; --i)
+				{
+					if (pWindows[i].bDesktopBg)
+					{
+						SWindowDrawObject wdoBackground;
+						memcpy(&wdoBackground, pWindows + i, sizeof(SWindowDrawObject));
+						FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
+						FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYSCREEN);
+						FLOAT H_frust = 4.224978f;
+						FLOAT W_frust = H_frust * (Sw / Sh);
+
+						FLOAT w = Sw;
+						FLOAT h = Sh;
+						FLOAT cx = w / 2.0f;
+						FLOAT cy = h / 2.0f;
+
+						wdoBackground.fPosition[0] = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
+						wdoBackground.fPosition[1] = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
+						wdoBackground.fPosition[2] = 0.1f;
+						wdoBackground.fRotationY = 0.0f;
+						wdoBackground.fOpacity = 1.0f;
+
+						FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
+						wdoBackground.fScale[0] = matchScale;
+						wdoBackground.fScale[1] = matchScale;
+						wdoBackground.fScale[2] = 1.0f;
+						RenderDrawObject(&wdoBackground);
+						break;
+					}
+				}
+			}
+
 			for (INT i = static_cast<INT>(cWindows)-1; i >= 0; --i)
 			{
-				IDirect3DTexture9* pTexture = NULL;
-				auto it = m_WindowTextureMap.find(pWindows[i].hTargetWnd);
-				if (it != m_WindowTextureMap.end())
-				{
-					pTexture = it->second.pD3D9Texture;
-				}
-
-				if (!pTexture || pWindows[i].fOpacity < 1.0f / 255.0f) continue;
-
-				D3DSURFACE_DESC desc;
-				pTexture->GetLevelDesc(0, &desc);
-
-				float winW_px = static_cast<float>(desc.Width);
-				float winH_px = static_cast<float>(desc.Height);
-				float aspect = winW_px / winH_px;
-
-				D3DXMATRIX matScale, matRotY, matTranslate, matWorld;
-				D3DXMatrixScaling(&matScale, aspect * pWindows[i].fScale[0], pWindows[i].fScale[1], pWindows[i].fScale[2]);
-				D3DXMatrixRotationY(&matRotY, D3DXToRadian(pWindows[i].fRotationY));
-				D3DXMatrixTranslation(&matTranslate, pWindows[i].fPosition[0], pWindows[i].fPosition[1], pWindows[i].fPosition[2]);
-
-				matWorld = matScale * matRotY * matTranslate;
-				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_WORLD, &matWorld));
-
-				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_PROJECTION, &matProj));
-				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));
-				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_WORLD, &matWorld));
-
-				DWORD bAlpha = static_cast<DWORD>(pWindows[i].fOpacity * 255.0f);
-				if (bAlpha > 255) bAlpha = 255;
-				DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_TEXTUREFACTOR, (bAlpha << 24) | 0x00FFFFFF));
-
-				DEVICE_CALL(m_pD3D9ExDevice->SetTexture(0, pTexture));
-				DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));
-				DEVICE_CALL(m_pD3D9ExDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, g_QuadVertices, sizeof(SVertex3D)));
-
-				if (m_Settings.bRenderBorders && !pWindows[i].bDesktopBg && pWindows[i].bDecorated)
-				{
-					float borderSizeX = 9.0f / winW_px;
-					float borderSizeY = 9.0f / winH_px;
-					float topBorderSizeY = 38.0f / winH_px;
-					float rightBorderSizeX = 138.0f / winW_px;
-
-					float thickLX = borderSizeX * 2.0f;       // 9px wide (Left side)
-					float thickSmallRX = borderSizeX * 2.0f;  // 9px wide (Right side border)
-					float thickRX = rightBorderSizeX * 2.0f;  // 138px wide (Button asset width)
-					float thickBY = borderSizeY * 2.0f;       // 9px high
-					float thickTY = topBorderSizeY * 2.0f;    // 38px high
-
-					float leftEdge = -1.0f;
-					float rightEdge = 1.0f;
-					float topEdge = 1.0f;
-					float bottomEdge = -1.0f;
-
-					float outerRightEdge = rightEdge + thickSmallRX;
-
-					// Top Left Corner
-					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[0], leftEdge - thickLX, topEdge + thickTY, leftEdge, topEdge);
-
-					// Top Border
-					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[1], leftEdge, topEdge + thickTY, outerRightEdge - thickRX, topEdge);
-
-					// Top Right Corner
-					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[2], outerRightEdge - thickRX, topEdge + thickTY, outerRightEdge, topEdge);
-
-					// Right Border
-					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[3], rightEdge, topEdge, outerRightEdge, bottomEdge);
-
-					// Bottom Right
-					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[4], outerRightEdge - thickRX, bottomEdge, outerRightEdge, bottomEdge - thickBY);
-
-					// Bottom Border
-					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[5], leftEdge, bottomEdge, outerRightEdge - thickRX, bottomEdge - thickBY);
-
-					// Bottom Left Corner
-					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[6], leftEdge - thickLX, bottomEdge, leftEdge, bottomEdge - thickBY);
-
-					// Left Border
-					Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[7], leftEdge - thickLX, topEdge, leftEdge, bottomEdge);
-				}
+				RenderDrawObject(pWindows + i);
 			}
 
 			DEVICE_CALL(m_pD3D9ExDevice->EndScene());
 		}
 
 		DEVICE_CALL(m_pD3D9ExDevice->Present(NULL, NULL, NULL, NULL));
-	}
-
-	void CD3D9ExRendererApi::SetSettings(const SRendererSettings* pSettings)
-	{
-		memcpy(&m_Settings, pSettings, sizeof(SRendererSettings));
 	}
 
 	void CD3D9ExRendererApi::InitD3D9Ex()
@@ -543,9 +510,24 @@ namespace aeroflip
 		m_D3DPresentParams.hDeviceWindow = hWnd;
 		m_D3DPresentParams.Windowed = TRUE;
 		m_D3DPresentParams.BackBufferFormat = D3DFMT_A8R8G8B8;
-		m_D3DPresentParams.MultiSampleType = (D3DMULTISAMPLE_TYPE)uMultiSampleLevel;
+		m_D3DPresentParams.MultiSampleType = min((D3DMULTISAMPLE_TYPE)uMultiSampleLevel, D3DMULTISAMPLE_16_SAMPLES);
 		m_D3DPresentParams.SwapEffect = D3DSWAPEFFECT_DISCARD;
-		m_D3DPresentParams.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
+		m_D3DPresentParams.PresentationInterval = m_Config.bVSync ? D3DPRESENT_INTERVAL_DEFAULT : D3DPRESENT_INTERVAL_IMMEDIATE;
+
+		// Find closest available MSAA quality.
+		while (m_D3DPresentParams.MultiSampleType > D3DMULTISAMPLE_NONE)
+		{
+			DWORD dwMsQualityLevels = 0;
+			if (FAILED(m_pD3D9Ex->CheckDeviceMultiSampleType(uAdapter, devType, m_D3DPresentParams.BackBufferFormat,
+				m_D3DPresentParams.Windowed, m_D3DPresentParams.MultiSampleType, &dwMsQualityLevels)) || dwMsQualityLevels == 0)
+			{
+				--*(INT*)&m_D3DPresentParams.MultiSampleType;
+			}
+			else
+			{
+				break;
+			}
+		}
 
 		D3DDISPLAYMODEEX mode;
 		mode.Size = sizeof(D3DDISPLAYMODEEX);
@@ -634,6 +616,89 @@ namespace aeroflip
 		if (FAILED(m_pD3D9ExDevice->Reset(&m_D3DPresentParams)))
 		{
 			throw std::runtime_error("Failed to reset D3D9 device!");
+		}
+	}
+
+	void CD3D9ExRendererApi::RenderDrawObject(const SWindowDrawObject* pWindow)
+	{
+		IDirect3DTexture9* pTexture = NULL;
+		auto it = m_WindowTextureMap.find(pWindow->hTargetWnd);
+		if (it != m_WindowTextureMap.end())
+		{
+			pTexture = it->second.pD3D9Texture;
+		}
+
+		if (!pTexture || pWindow->fOpacity < 1.0f / 255.0f) 
+		{
+			return;
+		}
+
+		D3DSURFACE_DESC desc;
+		pTexture->GetLevelDesc(0, &desc);
+
+		float winW_px = static_cast<float>(desc.Width);
+		float winH_px = static_cast<float>(desc.Height);
+		float aspect = winW_px / winH_px;
+
+		D3DXMATRIX matScale, matRotY, matTranslate, matWorld;
+		D3DXMatrixScaling(&matScale, aspect * pWindow->fScale[0], pWindow->fScale[1], pWindow->fScale[2]);
+		D3DXMatrixRotationY(&matRotY, D3DXToRadian(pWindow->fRotationY));
+		D3DXMatrixTranslation(&matTranslate, pWindow->fPosition[0], pWindow->fPosition[1], pWindow->fPosition[2]);
+
+		matWorld = matScale * matRotY * matTranslate;
+		DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_WORLD, &matWorld));
+
+		DWORD bAlpha = static_cast<DWORD>(pWindow->fOpacity * 255.0f);
+		if (bAlpha > 255) bAlpha = 255;
+		DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_TEXTUREFACTOR, (bAlpha << 24) | 0x00FFFFFF));
+
+		DEVICE_CALL(m_pD3D9ExDevice->SetTexture(0, pTexture));
+		DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));
+		DEVICE_CALL(m_pD3D9ExDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, g_QuadVertices, sizeof(SVertex3D)));
+
+		if (!pWindow->bDesktopBg && pWindow->bDecorated)
+		{
+			float borderSizeX = 9.0f / winW_px;
+			float borderSizeY = 9.0f / winH_px;
+			float topBorderSizeY = 38.0f / winH_px;
+			float rightBorderSizeX = 138.0f / winW_px;
+
+			float thickLX = borderSizeX * 2.0f;       // 9px wide (Left side)
+			float thickSmallRX = borderSizeX * 2.0f;  // 9px wide (Right side border)
+			float thickRX = rightBorderSizeX * 2.0f;  // 138px wide (Button asset width)
+			float thickBY = borderSizeY * 2.0f;       // 9px high
+			float thickTY = topBorderSizeY * 2.0f;    // 38px high
+
+			float leftEdge = -1.0f;
+			float rightEdge = 1.0f;
+			float topEdge = 1.0f;
+			float bottomEdge = -1.0f;
+
+			float outerRightEdge = rightEdge + thickSmallRX;
+
+			// Top Left Corner
+			Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[0], leftEdge - thickLX, topEdge + thickTY, leftEdge, topEdge);
+
+			// Top Border
+			Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[1], leftEdge, topEdge + thickTY, outerRightEdge - thickRX, topEdge);
+
+			// Top Right Corner
+			Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[2], outerRightEdge - thickRX, topEdge + thickTY, outerRightEdge, topEdge);
+
+			// Right Border
+			Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[3], rightEdge, topEdge, outerRightEdge, bottomEdge);
+
+			// Bottom Right
+			Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[4], outerRightEdge - thickRX, bottomEdge, outerRightEdge, bottomEdge - thickBY);
+
+			// Bottom Border
+			Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[5], leftEdge, bottomEdge, outerRightEdge - thickRX, bottomEdge - thickBY);
+
+			// Bottom Left Corner
+			Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[6], leftEdge - thickLX, bottomEdge, leftEdge, bottomEdge - thickBY);
+
+			// Left Border
+			Draw3DBorderQuad(m_pD3D9ExDevice, g_pBorderTextures[7], leftEdge - thickLX, topEdge, leftEdge, bottomEdge);
 		}
 	}
 }

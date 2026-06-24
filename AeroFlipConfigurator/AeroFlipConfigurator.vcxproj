@@ -27,9 +27,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{6B1B8C3A-FDE7-4FA9-9206-D2C8F8463BC4}</ProjectGuid>
+    <ProjectGuid>{7180408F-72BA-4DFC-A89C-EAA02A1B60D5}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>AeroFlip</RootNamespace>
+    <RootNamespace>AeroFlipConfigurator</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -119,21 +119,16 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\AeroFlipCommon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\vendor\dxsdk\Include;$(ProjectDir)..\AeroFlipCommon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4127</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d9.lib;$(ProjectDir)Lib\$(PlatformShortName)\dwmlivepreview.lib;$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)\d3dx9.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PreBuildEvent>
-      <Command>mkdir "$(ProjectDir)Lib\$(PlatformShortName)" &amp;&amp; "$(VCInstallDir)bin\lib.exe" /def:dwmlivepreview_$(PlatformShortName).def /OUT:"$(ProjectDir)Lib\$(PlatformShortName)\dwmlivepreview.lib" /MACHINE:$(PlatformShortName)
-cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCInstallDir)bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
-    </PreBuildEvent>
     <Manifest>
-      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
       <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
@@ -144,23 +139,16 @@ cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCIn
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\AeroFlipCommon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\vendor\dxsdk\Include;$(ProjectDir)..\AeroFlipCommon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4127</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d9.lib;$(ProjectDir)Lib\$(PlatformShortName)\dwmlivepreview.lib;$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)\d3dx9.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
-      <UACUIAccess>false</UACUIAccess>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PreBuildEvent>
-      <Command>mkdir "$(ProjectDir)Lib\$(PlatformShortName)" &amp;&amp; "$(VCInstallDir)bin\lib.exe" /def:dwmlivepreview_$(PlatformShortName).def /OUT:"$(ProjectDir)Lib\$(PlatformShortName)\dwmlivepreview.lib" /MACHINE:$(PlatformShortName)
-cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCInstallDir)bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
-    </PreBuildEvent>
     <Manifest>
-      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
       <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
@@ -173,8 +161,8 @@ cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCIn
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\AeroFlipCommon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\vendor\dxsdk\Include;$(ProjectDir)..\AeroFlipCommon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4127</DisableSpecificWarnings>
     </ClCompile>
     <Link>
@@ -182,15 +170,9 @@ cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCIn
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>d3d9.lib;$(ProjectDir)Lib\$(PlatformShortName)\dwmlivepreview.lib;$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)\d3dx9.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <UACUIAccess>false</UACUIAccess>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PreBuildEvent>
-      <Command>mkdir "$(ProjectDir)Lib\$(PlatformShortName)" &amp;&amp; "$(VCInstallDir)bin\lib.exe" /def:dwmlivepreview_$(PlatformShortName).def /OUT:"$(ProjectDir)Lib\$(PlatformShortName)\dwmlivepreview.lib" /MACHINE:$(PlatformShortName)
-cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCInstallDir)bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
-    </PreBuildEvent>
     <Manifest>
-      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
       <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
@@ -203,8 +185,8 @@ cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCIn
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\AeroFlipCommon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\vendor\dxsdk\Include;$(ProjectDir)..\AeroFlipCommon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4127</DisableSpecificWarnings>
     </ClCompile>
     <Link>
@@ -212,15 +194,9 @@ cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCIn
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>d3d9.lib;$(ProjectDir)Lib\$(PlatformShortName)\dwmlivepreview.lib;$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)\d3dx9.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <UACUIAccess>true</UACUIAccess>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PreBuildEvent>
-      <Command>mkdir "$(ProjectDir)Lib\$(PlatformShortName)" &amp;&amp; "$(VCInstallDir)bin\lib.exe" /def:dwmlivepreview_$(PlatformShortName).def /OUT:"$(ProjectDir)Lib\$(PlatformShortName)\dwmlivepreview.lib" /MACHINE:$(PlatformShortName)
-cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCInstallDir)bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
-    </PreBuildEvent>
     <Manifest>
-      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
       <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
@@ -233,8 +209,8 @@ cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCIn
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\AeroFlipCommon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\vendor\dxsdk\Include;$(ProjectDir)..\AeroFlipCommon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4127</DisableSpecificWarnings>
     </ClCompile>
     <Link>
@@ -242,16 +218,9 @@ cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCIn
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>d3d9.lib;$(ProjectDir)Lib\$(PlatformShortName)\dwmlivepreview.lib;$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)\d3dx9.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
-      <UACUIAccess>false</UACUIAccess>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PreBuildEvent>
-      <Command>mkdir "$(ProjectDir)Lib\$(PlatformShortName)" &amp;&amp; "$(VCInstallDir)bin\lib.exe" /def:dwmlivepreview_$(PlatformShortName).def /OUT:"$(ProjectDir)Lib\$(PlatformShortName)\dwmlivepreview.lib" /MACHINE:$(PlatformShortName)
-cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCInstallDir)bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
-    </PreBuildEvent>
     <Manifest>
-      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
       <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
@@ -264,8 +233,8 @@ cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCIn
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\AeroFlipCommon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\vendor\dxsdk\Include;$(ProjectDir)..\AeroFlipCommon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4127</DisableSpecificWarnings>
     </ClCompile>
     <Link>
@@ -273,35 +242,23 @@ cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCIn
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>d3d9.lib;$(ProjectDir)Lib\$(PlatformShortName)\dwmlivepreview.lib;$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)\d3dx9.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
-      <UACUIAccess>true</UACUIAccess>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PreBuildEvent>
-      <Command>mkdir "$(ProjectDir)Lib\$(PlatformShortName)" &amp;&amp; "$(VCInstallDir)bin\lib.exe" /def:dwmlivepreview_$(PlatformShortName).def /OUT:"$(ProjectDir)Lib\$(PlatformShortName)\dwmlivepreview.lib" /MACHINE:$(PlatformShortName)
-cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCInstallDir)bin\lib.exe" /def:d3dx9.def /OUT:d3dx9.lib /MACHINE:$(PlatformShortName)</Command>
-    </PreBuildEvent>
     <Manifest>
-      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
       <AdditionalManifestFiles>$(ProjectDir)app.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="AeroFlip.h" />
-    <ClInclude Include="CD3D9ExRendererApi.h" />
-    <ClInclude Include="CWindowProvider.h" />
-    <ClInclude Include="DwmLivePreview.h" />
-    <ClInclude Include="IRendererApi.h" />
+    <Text Include="ReadMe.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="AeroFlipConfigurator.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="stdafx.h" />
-    <ClInclude Include="SWindowDrawObject.h" />
-    <ClInclude Include="SWindowTarget.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="AeroFlip.cpp" />
-    <ClCompile Include="CD3D9ExRendererApi.cpp" />
-    <ClCompile Include="CWindowProvider.cpp" />
+    <ClCompile Include="AeroFlipConfigurator.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -312,23 +269,11 @@ cd /d "$(ProjectDir)..\vendor\dxsdk\Lib\$(PlatformShortName)" &amp;&amp; "$(VCIn
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="AeroFlip.rc" />
+    <ResourceCompile Include="AeroFlipConfigurator.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="AeroFlip.ico" />
+    <Image Include="AeroFlipConfigurator.ico" />
     <Image Include="small.ico" />
-    <Image Include="windowBottom.png" />
-    <Image Include="windowBottomLeft.png" />
-    <Image Include="windowBottomRight.png" />
-    <Image Include="windowLeft.png" />
-    <Image Include="windowRight.png" />
-    <Image Include="windowTop.png" />
-    <Image Include="windowTopLeft.png" />
-    <Image Include="windowTopRight.png" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="dwmlivepreview_x64.def" />
-    <None Include="dwmlivepreview_x86.def" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

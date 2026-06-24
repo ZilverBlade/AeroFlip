@@ -9,6 +9,7 @@ AeroFlip.tlog/
 *.exe
 *.dll
 *.lib
+*.exp
 *.pch
 *.pdb
 *.idb

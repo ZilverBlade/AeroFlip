@@ -3,12 +3,17 @@
 
 #include "stdafx.h"
 #include "AeroFlip.h"
+#include "SAeroFlipConfig.h"
 #include "SWindowDrawObject.h"
 #include "CD3D9ExRendererApi.h" 
 #include "CWindowProvider.h" 
+#include "CommonsCfg.h"
+#include "DwmLivePreview.h"
+
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
 #include <shlobj.h> 
+#include <shellapi.h>
 
 #include <algorithm>
 #include <sstream>
@@ -29,14 +34,27 @@
 
 #define MAX_LOADSTRING 100
 
+#define WM_TRAYICON         (WM_USER + 1)
+#define ID_TRAY_HIDE        3001
+#define ID_TRAY_STOP        3002
+#define ID_TRAY_CONFIG      3003
+#define UID_NOTIF_TRAY		1;
+
 // Global Variables:
 HINSTANCE g_hst = NULL;									// current instance
 TCHAR g_szTitle[MAX_LOADSTRING];						// The title bar text
 TCHAR g_szWindowClass[MAX_LOADSTRING];					// the main window class name
 HWINEVENTHOOK g_hEventHook = NULL;
 HHOOK g_hKeyboardHook = NULL;
+aeroflip::SAeroFlipConfig g_AeroFlipCfg;
 aeroflip::IRendererApi* g_pRenderer = NULL;				// Windowing renderer
 aeroflip::CWindowProvider* g_pWindowProvider = NULL;	// DWMAPI Provider
+
+// Global State Variables for File Watching
+HANDLE g_hWatcherThread = NULL;
+HANDLE g_hWatcherStopEvent = NULL;
+CRITICAL_SECTION g_csRendererLock;
+BOOL g_bRecreateRenderer = FALSE;
 
 // Global State Variables:
 BOOL g_bWindowListDirty = TRUE;							// Tracks if the window list needs updating
@@ -51,19 +69,33 @@ std::vector<aeroflip::SWindowDrawObject> g_DrawObjects;
 // Forward declarations of functions included in this code module:
 ATOM				MyRegisterClass(HINSTANCE);
 BOOL				InitInstance(HINSTANCE, int);
+void				AddTrayIcon(HWND);
+void				RemoveTrayIcon(HWND);
+void				ShowTrayContextMenu(HWND);
+void				OpenConfigurator(HWND);
+
 void				WakeAeroFlip(HWND);
 void				DismissAeroFlip(HWND, HWND, BOOL);
+void				UpdateDrawObjects();
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 void CALLBACK		WinEventProc(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD);
 LRESULT CALLBACK	LowLevelKeyboardProc(int, WPARAM, LPARAM);
+DWORD WINAPI		ConfigFileWatcherThread(LPVOID);
+
+void                LoadConfig();
 
 void				UpdateWindowAnimations(FLOAT);
 void				MakeWindowTransparent(HWND);
 void				InitializeWindowEventHook();
 void				CleanupWindowEventHook();
 void				FocusDesktopViaShell();
-void				HideWindowsFromView();
-void				RestoreWindowsFromView();
+//void				HideWindowsFromView(HWND);
+//void				RestoreWindowsFromView(HWND);
+
+aeroflip::IRendererApi* GetRendererApi(const aeroflip::SRendererConfig* pRendererConfig, HWND hWnd)
+{
+	return new aeroflip::CD3D9ExRendererApi(pRendererConfig, hWnd);
+}
 
 int APIENTRY _tWinMain(
 	_In_ HINSTANCE hInstance,
@@ -89,6 +121,8 @@ int APIENTRY _tWinMain(
 		return FALSE;
 	}
 
+	LoadConfig();
+
 	MSG msg;
 	ZeroMemory(&msg, sizeof(MSG));
 	try
@@ -97,279 +131,155 @@ int APIENTRY _tWinMain(
 		LoadString(hInstance, IDC_AEROFLIP, g_szWindowClass, MAX_LOADSTRING);
 		MyRegisterClass(hInstance);
 
-		if (!InitInstance(hInstance, nCmdShow)) return FALSE;
+		if (!InitInstance(hInstance, nCmdShow))
+		{
+			return FALSE;
+		}
 
 		HWND hWnd = FindWindow(g_szWindowClass, g_szTitle);
 
+		g_pWindowProvider = new aeroflip::CWindowProvider(hWnd, g_szWindowClass);
+		g_pWindowProvider->UpdateWindowList();
+
+		g_pRenderer = GetRendererApi(&g_AeroFlipCfg.rConfig, hWnd);
+
+		InitializeWindowEventHook();
+		InitializeCriticalSection(&g_csRendererLock);
+
+		LARGE_INTEGER liFreq;
+		QueryPerformanceFrequency(&liFreq);
+		g_dFreq = 1.0 / double(liFreq.QuadPart);
+		QueryPerformanceCounter(&g_liLastTime);
+
+		g_hWatcherStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+		g_hWatcherThread = CreateThread(NULL, 0, ConfigFileWatcherThread, hWnd, 0, NULL);
+
+		while (msg.message != WM_QUIT)
 		{
-			aeroflip::SWindowProviderConfig wConfig;
-			ZeroMemory(&wConfig, sizeof(aeroflip::SWindowProviderConfig));
-
-			wConfig.hWnd = hWnd;
-			wConfig.szAppWindowClass = g_szWindowClass;
-
-			g_pWindowProvider = new aeroflip::CWindowProvider(&wConfig);
-
-			g_pWindowProvider->UpdateWindowList();
-		}
-	{
-		aeroflip::SD3D9ExRendererApiConfig rConfig;
-		ZeroMemory(&rConfig, sizeof(aeroflip::SD3D9ExRendererApiConfig));
-
-		rConfig.hWnd = hWnd;
-		rConfig.bHardwareAcceleration = TRUE;
-		rConfig.uMultiSampleLevel = 4;
-
-		g_pRenderer = new aeroflip::CD3D9ExRendererApi(&rConfig);
-
-		aeroflip::SRendererSettings rSettings;
-		ZeroMemory(&rSettings, sizeof(aeroflip::SRendererSettings));
-
-		rSettings.bLiveCapture = FALSE;
-		rSettings.bRenderBorders = FALSE;
-
-		g_pRenderer->SetSettings(&rSettings);
-	}
-
-	InitializeWindowEventHook();
-
-	LARGE_INTEGER liFreq;
-	QueryPerformanceFrequency(&liFreq);
-	g_dFreq = 1.0 / double(liFreq.QuadPart);
-	QueryPerformanceCounter(&g_liLastTime);
-
-	while (msg.message != WM_QUIT)
-	{
-		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
-		{
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-
-			if (msg.message == WM_HOTKEY && msg.wParam == 1)
+			if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 			{
-				HWND hLastActiveWindow = GetForegroundWindow();
-
-				g_pWindowProvider->UpdateWindowList();
-				if (hLastActiveWindow != hWnd)
-				{
-					g_pWindowProvider->FlagActiveWindow(hLastActiveWindow);
-				}
-
-				g_uActiveIndex = 0;
-
-				BOOL bAnyWindowFocused = FALSE;
-				INT iDesktopIndex = -1;
-
-				for (size_t idx = 0; idx < g_DrawObjects.size(); ++idx)
-				{
-
-					if (g_DrawObjects[idx].bDesktopBg)
-					{
-						iDesktopIndex = (INT)idx;
-					}
-					else if (g_DrawObjects[idx].hTargetWnd == g_hLastActiveWindow)
-					{
-						bAnyWindowFocused = TRUE;
-					}
-				}
-
-				if (!bAnyWindowFocused && iDesktopIndex != -1)
-				{
-					g_uActiveIndex = (UINT)iDesktopIndex;
-				}
-
-				if (g_bIsDismissing)
-				{
-					g_bIsDismissing = FALSE;
-				}
-				else
-				{
-					WakeAeroFlip(hWnd);
-				}
-			}
-		}
-		else
-		{
-			if (IsWindowVisible(hWnd))
-			{
-				bool bAltHeld = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
-
-				if (!bAltHeld)
-				{
-					if (!g_bIsDismissing)
-					{
-						g_bIsDismissing = TRUE;
-					}
-
-					BOOL bDismissComplete = FALSE;
-					if (g_DrawObjects.empty() || g_uActiveIndex >= (UINT)g_DrawObjects.size())
-					{
-						bDismissComplete = TRUE;
-					}
-					else
-					{
-						if (g_DrawObjects[g_uActiveIndex].fPosition[2] <= 0.05f)
-						{
-							bDismissComplete = TRUE;
-						}
-					}
-
-					if (bDismissComplete)
-					{
-						HWND hTargetApp = NULL;
-						BOOL bDesktop = FALSE;
-						if (!g_DrawObjects.empty() && g_uActiveIndex < (UINT)g_DrawObjects.size())
-						{
-							hTargetApp = g_DrawObjects[g_uActiveIndex].hTargetWnd;
-							bDesktop = g_DrawObjects[g_uActiveIndex].bDesktopBg;
-						}
-						else
-						{
-							hTargetApp = g_pWindowProvider->HGetActiveWindow();
-						}
-
-						DismissAeroFlip(hWnd, hTargetApp, bDesktop);
-						g_bIsDismissing = FALSE;
-						GetAsyncKeyState(VK_MENU);
-						continue;
-					}
-				}
-				else
-				{
-					g_bIsDismissing = FALSE;
-				}
-
-				if (g_bWindowListDirty)
-				{
-					PROFILE_SCOPE(L"Update Window List");
-
-					g_pWindowProvider->UpdateWindowList();
-
-					const aeroflip::SWindowTarget* pTargets = nullptr;
-					UINT cTargets = 0;
-					g_pWindowProvider->QueryWindows(&pTargets, &cTargets);
-
-					std::vector<aeroflip::SWindowDrawObject> updatedObjects(cTargets);
-					for (UINT i = 0; i < cTargets; ++i)
-					{
-						updatedObjects[i].hTargetWnd = pTargets[i].hWnd;
-						updatedObjects[i].bFocused = pTargets[i].bActive;
-						updatedObjects[i].bDesktopBg = pTargets[i].bDesktopWindow;
-						updatedObjects[i].bDecorated = pTargets[i].bDecorated;
-
-						RECT r;
-						ZeroMemory(&r, sizeof(RECT));
-						if (IsIconic(pTargets[i].hWnd))
-						{
-							if (pTargets[i].bHasCachedBounds)
-							{
-								r = pTargets[i].rcCachedBounds;
-							}
-							else
-							{
-								WINDOWPLACEMENT wp;
-								wp.length = sizeof(WINDOWPLACEMENT);
-								GetWindowPlacement(pTargets[i].hWnd, &wp);
-								r = wp.rcNormalPosition;
-							}
-						}
-						else
-						{
-							GetClientRect(pTargets[i].hWnd, &r);
-							ClientToScreen(pTargets[i].hWnd, (POINT*)&r.left);
-							ClientToScreen(pTargets[i].hWnd, (POINT*)&r.right);
-						}
-						updatedObjects[i].rcBounds = r;
-
-						// Retain spatial positions if this window existed previously
-						BOOL bFoundOld = FALSE;
-						for (const auto& oldObj : g_DrawObjects)
-						{
-							if (oldObj.hTargetWnd == pTargets[i].hWnd)
-							{
-								updatedObjects[i].fPosition[0] = oldObj.fPosition[0];
-								updatedObjects[i].fPosition[1] = oldObj.fPosition[1];
-								updatedObjects[i].fPosition[2] = oldObj.fPosition[2];
-								updatedObjects[i].fRotationY = oldObj.fRotationY;
-								updatedObjects[i].fOpacity = oldObj.fOpacity;
-								updatedObjects[i].fScale[0] = oldObj.fScale[0];
-								updatedObjects[i].fScale[1] = oldObj.fScale[1];
-								updatedObjects[i].fScale[2] = oldObj.fScale[2];
-								updatedObjects[i].dwMoveMode = aeroflip::eWDOMM_DEFAULT;
-								bFoundOld = TRUE;
-								break;
-							}
-						}
-
-						if (!bFoundOld)
-						{
-							FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
-							FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYSCREEN);
-							FLOAT H_frust = 4.224978f;
-							FLOAT W_frust = H_frust * (Sw / Sh);
-
-							FLOAT w = (FLOAT)(r.right - r.left);
-							if (w <= 0)
-							{
-								w = 100.0f;
-							}
-							FLOAT h = (FLOAT)(r.bottom - r.top);
-							if (h <= 0)
-							{
-								h = 100.0f;
-							}
-							FLOAT cx = r.left + w / 2.0f;
-							FLOAT cy = r.top + h / 2.0f;
-
-							updatedObjects[i].fPosition[0] = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
-							updatedObjects[i].fPosition[1] = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
-							updatedObjects[i].fPosition[2] = 0.1f;
-							updatedObjects[i].fRotationY = 0.0f;
-							updatedObjects[i].fOpacity = 1.0f;
-
-							FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
-							updatedObjects[i].fScale[0] = matchScale;
-							updatedObjects[i].fScale[1] = matchScale;
-							updatedObjects[i].fScale[2] = 1.0f;
-						}
-					}
-					g_DrawObjects = std::move(updatedObjects);
-
-					g_bWindowListDirty = FALSE;
-
-					QueryPerformanceCounter(&g_liLastTime);
-				}
-
-				LARGE_INTEGER liCurrentTime;
-				QueryPerformanceCounter(&liCurrentTime);
-				float fDeltaTime = float(double(liCurrentTime.QuadPart - g_liLastTime.QuadPart) * g_dFreq);
-				g_liLastTime = liCurrentTime;
-
-				if (fDeltaTime > 0.1f) fDeltaTime = 0.1f;
-
-				UpdateWindowAnimations(fDeltaTime);
-
-				if (g_pRenderer)
-				{
-					g_pRenderer->UpdateWindows(g_pWindowProvider);
-					// copy by value, to avoid window order state
-					auto draws = g_DrawObjects;
-					std::sort(draws.begin(), draws.end(),
-						[](const aeroflip::SWindowDrawObject& a, const aeroflip::SWindowDrawObject& b)
-					{
-						return a.iZOrder < b.iZOrder;
-					});
-					g_pRenderer->OnRender(draws.data(), (UINT)draws.size());
-				}
+				TranslateMessage(&msg);
+				DispatchMessage(&msg);
 			}
 			else
 			{
-				// Reset frame timestamps when inactive to skip processing gaps when woken back up
-				QueryPerformanceCounter(&g_liLastTime);
-				Sleep(10);
+				if (IsWindowVisible(hWnd))
+				{
+					BOOL bDismissTriggered = FALSE;
+
+					if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_WIN_TAB)
+					{
+						// In Win+Tab mode, dismissal is handled directly in LowLevelKeyboardProc asynchronously
+						bDismissTriggered = g_bIsDismissing;
+					}
+					else
+					{
+						BOOL bAltHeld = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+
+						if (!bAltHeld)
+						{
+							if (!g_bIsDismissing)
+							{
+								g_bIsDismissing = TRUE;
+							}
+							bDismissTriggered = TRUE;
+						}
+						else
+						{
+							g_bIsDismissing = FALSE;
+						}
+					}
+
+					if (bDismissTriggered)
+					{
+						BOOL bDismissComplete = FALSE;
+						if (g_DrawObjects.empty() || g_uActiveIndex >= (UINT)g_DrawObjects.size())
+						{
+							bDismissComplete = TRUE;
+						}
+						else
+						{
+							if (g_DrawObjects[g_uActiveIndex].fPosition[2] <= 0.05f)
+							{
+								bDismissComplete = TRUE;
+							}
+						}
+
+						if (bDismissComplete)
+						{
+							HWND hTargetApp = NULL;
+							BOOL bDesktop = FALSE;
+							if (!g_DrawObjects.empty() && g_uActiveIndex < (UINT)g_DrawObjects.size())
+							{
+								hTargetApp = g_DrawObjects[g_uActiveIndex].hTargetWnd;
+								bDesktop = g_DrawObjects[g_uActiveIndex].bDesktopBg;
+							}
+							else
+							{
+								hTargetApp = g_pWindowProvider->HGetActiveWindow();
+							}
+
+							DismissAeroFlip(hWnd, hTargetApp, bDesktop);
+							g_bIsDismissing = FALSE;
+
+							if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode != aeroflip::eFSM_WIN_TAB)
+							{
+								GetAsyncKeyState(VK_MENU);
+							}
+							continue;
+						}
+					}
+
+					if (g_bWindowListDirty)
+					{
+						PROFILE_SCOPE(L"Update Window List");
+
+						g_pWindowProvider->UpdateWindowList();
+						UpdateDrawObjects();
+						g_bWindowListDirty = FALSE;
+
+						QueryPerformanceCounter(&g_liLastTime);
+					}
+
+					LARGE_INTEGER liCurrentTime;
+					QueryPerformanceCounter(&liCurrentTime);
+					float fDeltaTime = float(double(liCurrentTime.QuadPart - g_liLastTime.QuadPart) * g_dFreq);
+					g_liLastTime = liCurrentTime;
+
+					if (fDeltaTime > 0.1f) fDeltaTime = 0.1f;
+
+					UpdateWindowAnimations(fDeltaTime);
+
+					EnterCriticalSection(&g_csRendererLock);
+					if (g_bRecreateRenderer)
+					{
+						delete g_pRenderer;
+						g_pRenderer = GetRendererApi(&g_AeroFlipCfg.rConfig, hWnd);
+						g_bRecreateRenderer = FALSE;
+					}
+					LeaveCriticalSection(&g_csRendererLock);
+
+					if (g_pRenderer)
+					{
+						g_pRenderer->UpdateWindows(g_pWindowProvider);
+						// copy by value, to avoid window order state
+						auto draws = g_DrawObjects;
+						std::sort(draws.begin(), draws.end(),
+							[](const aeroflip::SWindowDrawObject& a, const aeroflip::SWindowDrawObject& b)
+						{
+							return a.iZOrder < b.iZOrder;
+						});
+						g_pRenderer->OnRender(draws.data(), (UINT)draws.size(), g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping);
+					}
+				}
+				else
+				{
+					Sleep(10);
+					// Reset frame timestamps when inactive to skip processing gaps when woken back up
+					QueryPerformanceCounter(&g_liLastTime);
+				}
 			}
 		}
-	}
 	}
 	catch (std::exception ex)
 	{
@@ -377,6 +287,16 @@ int APIENTRY _tWinMain(
 		OutputDebugStringA(ex.what());
 		OutputDebugString(TEXT("\n"));
 	}
+
+	if (g_hWatcherStopEvent)
+	{
+		SetEvent(g_hWatcherStopEvent);
+		WaitForSingleObject(g_hWatcherThread, 2000); // wait up to 2s before giving up
+		CloseHandle(g_hWatcherThread);
+		CloseHandle(g_hWatcherStopEvent);
+	}
+	DeleteCriticalSection(&g_csRendererLock);
+
 	CleanupWindowEventHook();
 	delete g_pRenderer;
 	delete g_pWindowProvider;
@@ -425,22 +345,104 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 		return FALSE;
 	}
 
-	if (!RegisterHotKey(hWnd, 1, MOD_CONTROL | MOD_WIN, VK_TAB))
-	{
-		OutputDebugString(L"Failed to register global shortcut!\n");
-		return FALSE;
-	}
-
 	ShowWindow(hWnd, SW_HIDE);
-	//ShowWindow(hWnd, nCmdShow);
 	MakeWindowTransparent(hWnd);
 	UpdateWindow(hWnd);
+	AddTrayIcon(hWnd);
+
+	// prevent hiding when peeking
+	BOOL policy = TRUE;
+	DwmSetWindowAttribute(hWnd, DWMWA_EXCLUDED_FROM_PEEK, &policy, sizeof(BOOL));
+	DwmSetWindowAttribute(hWnd, DWMWA_DISALLOW_PEEK, &policy, sizeof(BOOL));
+	DwmSetWindowAttribute(hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, &policy, sizeof(BOOL));
 
 	return TRUE;
 }
 
+void AddTrayIcon(HWND hWnd)
+{
+	NOTIFYICONDATA nid = { 0 };
+	nid.cbSize = sizeof(NOTIFYICONDATA);
+	nid.hWnd = hWnd;
+	nid.uID = UID_NOTIF_TRAY;
+	nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+	nid.uCallbackMessage = WM_TRAYICON;
+
+	nid.hIcon = LoadIcon(g_hst, MAKEINTRESOURCE(IDI_AEROFLIP));
+	if (!nid.hIcon)
+	{
+		OutputDebugString(TEXT("Failed to setup tray icon\n"));
+		return;
+	}
+
+	lstrcpyn(nid.szTip, TEXT("AeroFlip"), sizeof(nid.szTip) / sizeof(TCHAR));
+
+	Shell_NotifyIcon(NIM_ADD, &nid);
+}
+
+void RemoveTrayIcon(HWND hWnd)
+{
+	NOTIFYICONDATA nid = { 0 };
+	nid.cbSize = sizeof(NOTIFYICONDATA);
+	nid.hWnd = hWnd;
+	nid.uID = UID_NOTIF_TRAY;
+	Shell_NotifyIcon(NIM_DELETE, &nid);
+}
+
+void ShowTrayContextMenu(HWND hWnd)
+{
+	POINT pt;
+	GetCursorPos(&pt);
+
+	HMENU hMenu = CreatePopupMenu();
+	if (hMenu)
+	{
+		InsertMenu(hMenu, UINT_MAX, MF_BYPOSITION | MF_STRING, ID_TRAY_CONFIG, L"Open Configurator");
+		InsertMenu(hMenu, UINT_MAX, MF_BYPOSITION | MF_STRING, ID_TRAY_HIDE, L"Hide Icon");
+		InsertMenu(hMenu, UINT_MAX, MF_BYPOSITION | MF_SEPARATOR, 0, NULL);
+		InsertMenu(hMenu, UINT_MAX, MF_BYPOSITION | MF_STRING, ID_TRAY_STOP, L"Stop AeroFlip");
+
+		SetForegroundWindow(hWnd);
+
+		TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, hWnd, NULL);
+		DestroyMenu(hMenu);
+	}
+}
+
+void OpenConfigurator(HWND hWnd)
+{
+	TCHAR exePath[MAX_PATH];
+	GetModuleFileName(NULL, exePath, MAX_PATH);
+
+	TCHAR* lastSlash = _tcsrchr(exePath, L'\\');
+	if (lastSlash != NULL)
+	{
+		*(lastSlash + 1) = TEXT('\0');
+	}
+
+	lstrcat(exePath, TEXT("AeroFlipConfigurator.exe"));
+
+	HINSTANCE hInst = ShellExecute(
+		hWnd,
+		L"open",
+		exePath,
+		NULL,
+		exePath,
+		SW_SHOW
+		);
+
+	if ((INT_PTR)hInst <= 32)
+	{
+		OutputDebugString(TEXT("Failed to launch AeroFlipConfigurator.exe"));
+	}
+}
+
 void WakeAeroFlip(HWND hWnd)
 {
+	//if (g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping)
+	//{
+	//	HideWindowsFromView(hWnd);
+	//}
 	if (g_pWindowProvider)
 	{
 		PROFILE_SCOPE(L"Invalidation");
@@ -451,21 +453,36 @@ void WakeAeroFlip(HWND hWnd)
 	ShowWindow(hWnd, SW_SHOW);
 	SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
 	SetForegroundWindow(hWnd);
-	HideWindowsFromView();
+	if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab)
+	{
+		// initial tab requires draw objects to be visible to switch
+		if (g_pWindowProvider)
+		{
+			g_pWindowProvider->UpdateWindowList();
+			UpdateDrawObjects();
+		}
+	}
 }
 
 void DismissAeroFlip(HWND hWnd, HWND hSelectedApp, BOOL bDesktopBackground)
 {
 	ShowWindow(hWnd, SW_HIDE);
+
 	// reduce memory usage when dismissed
 	if (g_pRenderer != NULL)
 	{
-		g_pRenderer->ReleaseWindows();
+		if (!g_AeroFlipCfg.rConfig.bPersistInVRAM)
+		{
+			g_pRenderer->ReleaseWindows();
+		}
 	}
-	// clear up RAM
+
+	// clear up RAM	
 	SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
 
-	RestoreWindowsFromView();
+	//// Restore regardless of config, might have changed while flipping was active!
+	//RestoreWindowsFromView(hWnd);
+
 	if (bDesktopBackground)
 	{
 		OutputDebugString(TEXT("Focussing Desktop\n"));
@@ -516,19 +533,140 @@ void DismissAeroFlip(HWND hWnd, HWND hSelectedApp, BOOL bDesktopBackground)
 	}
 }
 
+void UpdateDrawObjects()
+{
+	const aeroflip::SWindowTarget* pTargets = nullptr;
+	UINT cTargets = 0;
+	g_pWindowProvider->QueryWindows(&pTargets, &cTargets);
+
+	std::vector<aeroflip::SWindowDrawObject> updatedObjects(cTargets);
+	for (UINT i = 0; i < cTargets; ++i)
+	{
+		updatedObjects[i].hTargetWnd = pTargets[i].hWnd;
+		updatedObjects[i].bFocused = pTargets[i].bActive;
+		updatedObjects[i].bDesktopBg = pTargets[i].bDesktopWindow;
+		updatedObjects[i].bDecorated = g_AeroFlipCfg.sConfig.bRenderWindowBorders && pTargets[i].bDecorated;
+
+		RECT r;
+		ZeroMemory(&r, sizeof(RECT));
+		if (IsIconic(pTargets[i].hWnd))
+		{
+			if (pTargets[i].bHasCachedBounds)
+			{
+				r = pTargets[i].rcCachedBounds;
+			}
+			else
+			{
+				WINDOWPLACEMENT wp;
+				wp.length = sizeof(WINDOWPLACEMENT);
+				GetWindowPlacement(pTargets[i].hWnd, &wp);
+				r = wp.rcNormalPosition;
+			}
+		}
+		else
+		{
+			GetClientRect(pTargets[i].hWnd, &r);
+			ClientToScreen(pTargets[i].hWnd, (POINT*)&r.left);
+			ClientToScreen(pTargets[i].hWnd, (POINT*)&r.right);
+		}
+		updatedObjects[i].rcBounds = r;
+
+		// Retain spatial positions if this window existed previously
+		BOOL bFoundOld = FALSE;
+		for (const auto& oldObj : g_DrawObjects)
+		{
+			if (oldObj.hTargetWnd == pTargets[i].hWnd)
+			{
+				updatedObjects[i].fPosition[0] = oldObj.fPosition[0];
+				updatedObjects[i].fPosition[1] = oldObj.fPosition[1];
+				updatedObjects[i].fPosition[2] = oldObj.fPosition[2];
+				updatedObjects[i].fRotationY = oldObj.fRotationY;
+				updatedObjects[i].fOpacity = oldObj.fOpacity;
+				updatedObjects[i].fScale[0] = oldObj.fScale[0];
+				updatedObjects[i].fScale[1] = oldObj.fScale[1];
+				updatedObjects[i].fScale[2] = oldObj.fScale[2];
+				updatedObjects[i].dwMoveMode = aeroflip::eWDOMM_DEFAULT;
+				bFoundOld = TRUE;
+				break;
+			}
+		}
+
+		if (!bFoundOld)
+		{
+			FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
+			FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYSCREEN);
+			FLOAT H_frust = 4.224978f;
+			FLOAT W_frust = H_frust * (Sw / Sh);
+
+			FLOAT w = (FLOAT)(r.right - r.left);
+			if (w <= 0)
+			{
+				w = 100.0f;
+			}
+			FLOAT h = (FLOAT)(r.bottom - r.top);
+			if (h <= 0)
+			{
+				h = 100.0f;
+			}
+			FLOAT cx = r.left + w / 2.0f;
+			FLOAT cy = r.top + h / 2.0f;
+
+			updatedObjects[i].fPosition[0] = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
+			updatedObjects[i].fPosition[1] = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
+			updatedObjects[i].fPosition[2] = 0.1f;
+			updatedObjects[i].fRotationY = 0.0f;
+			updatedObjects[i].fOpacity = 1.0f;
+
+			FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
+			updatedObjects[i].fScale[0] = matchScale;
+			updatedObjects[i].fScale[1] = matchScale;
+			updatedObjects[i].fScale[2] = 1.0f;
+		}
+	}
+	g_DrawObjects = std::move(updatedObjects);
+
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	int wmId, wmEvent;
 
 	switch (message)
 	{
+	case WM_TRAYICON:
+		if (LOWORD(lParam) == WM_RBUTTONUP)
+		{
+			ShowTrayContextMenu(hWnd);
+			return 0;
+		}
+		if (LOWORD(lParam) == WM_LBUTTONDOWN)
+		{
+			OpenConfigurator(hWnd);
+			return 0;
+		}
+		break;
 	case WM_COMMAND:
 		wmId = LOWORD(wParam);
 		wmEvent = HIWORD(wParam);
-		UNREFERENCED_PARAMETER(wmId);
-		UNREFERENCED_PARAMETER(wmEvent);
 
-		return DefWindowProc(hWnd, message, wParam, lParam);
+		switch (wmId)
+		{
+		case ID_TRAY_HIDE:
+			RemoveTrayIcon(hWnd);
+			break;
+
+		case ID_TRAY_STOP:
+			RemoveTrayIcon(hWnd);
+			PostQuitMessage(0);
+			break;
+
+		case ID_TRAY_CONFIG:
+			OpenConfigurator(hWnd);
+			break;
+
+		default:
+			return DefWindowProc(hWnd, message, wParam, lParam);
+		}
 		break;
 
 	case WM_PAINT:
@@ -536,6 +674,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 
 	case WM_DESTROY:
+		RemoveTrayIcon(hWnd);
 		PostQuitMessage(0);
 		break;
 	default:
@@ -617,74 +756,171 @@ void CALLBACK WinEventProc(
 		break;
 	}
 }
+
+void FlipWindow()
+{
+	if (!g_DrawObjects.empty())
+	{
+		bool bShiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+		if (bShiftPressed && g_AeroFlipCfg.kbConfig.bShiftToMoveBack)
+		{
+			g_uActiveIndex = (g_uActiveIndex + g_DrawObjects.size() - 1) % (UINT)g_DrawObjects.size();
+		}
+		else
+		{
+			g_uActiveIndex = (g_uActiveIndex + 1) % (UINT)g_DrawObjects.size();
+		}
+		g_bIsCycling = TRUE;
+	}
+}
+
+void TriggerAeroFlipActivation(HWND hWnd)
+{
+	g_bWindowListDirty = TRUE;
+	g_hLastActiveWindow = GetForegroundWindow();
+
+	if (g_hLastActiveWindow != hWnd)
+	{
+		g_pWindowProvider->FlagActiveWindow(g_hLastActiveWindow);
+	}
+
+	UINT cWindows = 0;
+	const aeroflip::SWindowTarget* pWindows = NULL;
+
+	g_pWindowProvider->QueryWindows(&pWindows, &cWindows);
+
+	BOOL bFoundActiveWindow = FALSE;
+	INT iDesktopIndex = -1;
+
+	for (UINT i = 0; i < cWindows; ++i)
+	{
+		if (pWindows[i].bDesktopWindow)
+		{
+			iDesktopIndex = i;
+		}
+		else if (pWindows[i].hWnd == g_hLastActiveWindow)
+		{
+			g_uActiveIndex = i;
+			bFoundActiveWindow = TRUE;
+			break;
+		}
+	}
+
+	if (!bFoundActiveWindow && iDesktopIndex != -1)
+	{
+		g_uActiveIndex = (UINT)iDesktopIndex;
+		g_hLastActiveWindow = NULL;
+	}
+	else if (!bFoundActiveWindow && cWindows > 0)
+	{
+		g_uActiveIndex = 0;
+		g_hLastActiveWindow = pWindows[0].hWnd;
+	}
+
+	WakeAeroFlip(hWnd);
+}
+
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
 	if (nCode == HC_ACTION)
 	{
 		KBDLLHOOKSTRUCT* pKeyStruct = (KBDLLHOOKSTRUCT*)lParam;
+		HWND hWnd = FindWindow(g_szWindowClass, g_szTitle);
+		BOOL bAeroFlipActive = IsWindowVisible(hWnd);
 
-		if (pKeyStruct->vkCode == VK_TAB)
+		if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_WIN_TAB)
 		{
-			bool bAltPressed = (pKeyStruct->flags & LLKHF_ALTDOWN) != 0;
+			BOOL bWinDown = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
 
-			if (bAltPressed)
+			if (pKeyStruct->vkCode == VK_TAB && bAeroFlipActive)
 			{
-				if (wParam == WM_SYSKEYDOWN)
+				if (wParam == WM_KEYDOWN)
 				{
-					HWND hWnd = FindWindow(g_szWindowClass, g_szTitle);
-
-					if (!g_bIsDismissing)
-					{
-						if (!IsWindowVisible(hWnd))
-						{
-							g_bWindowListDirty = TRUE;
-							g_hLastActiveWindow = GetForegroundWindow();
-
-							if (g_hLastActiveWindow != hWnd)
-							{
-								g_pWindowProvider->FlagActiveWindow(g_hLastActiveWindow);
-							}
-
-							UINT cWindows = 0;
-							const aeroflip::SWindowTarget* pWindows = NULL;
-							
-							g_pWindowProvider->QueryWindows(&pWindows, &cWindows);
-
-							BOOL bFoundActiveWindow = FALSE;
-							for (UINT i = 0; i < cWindows; ++i)
-							{
-								if (pWindows[i].hWnd == g_hLastActiveWindow)
-								{
-									g_uActiveIndex = i;
-									bFoundActiveWindow = TRUE;
-									break;
-								}
-							}
-
-							if (!bFoundActiveWindow)
-							{
-								g_uActiveIndex = 0;
-								g_hLastActiveWindow = pWindows[0].hWnd;
-							}
-
-							WakeAeroFlip(hWnd);
-						}
-						else
-						{
-							// Cycle target indexing forwards
-							if (!g_DrawObjects.empty())
-							{
-								g_uActiveIndex = (g_uActiveIndex + 1) % (UINT)g_DrawObjects.size();
-								g_bIsCycling = TRUE;
-							}
-						}
-					}
-					return 1;
+					FlipWindow();
 				}
+				return 1; // Suppress built-in system task cycling
+			}
 
-				if (wParam == WM_SYSKEYUP)
+			if (pKeyStruct->vkCode == VK_TAB && bWinDown && !bAeroFlipActive)
+			{
+				if (wParam == WM_KEYDOWN)
 				{
-					return 1;
+					INPUT input = { 0 };
+					input.type = INPUT_KEYBOARD;
+					input.ki.wVk = VK_NONAME;
+					SendInput(1, &input, sizeof(INPUT));
+
+					TriggerAeroFlipActivation(hWnd);
+
+					if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab)
+					{
+						FlipWindow();
+					}
+				}
+				return 1;
+			}
+
+			// Trap Windows keys to dismiss if window is open
+			if (pKeyStruct->vkCode == VK_LWIN || pKeyStruct->vkCode == VK_RWIN)
+			{
+				if (bAeroFlipActive)
+				{
+					if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
+					{
+						return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+					}
+
+					if (wParam == WM_KEYDOWN)
+					{
+						g_bIsDismissing = !g_bIsDismissing;
+						return 1;
+					}
+				}
+			}
+		}
+		else if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_ALT_TAB)
+		{
+			if (pKeyStruct->vkCode == VK_TAB)
+			{
+				BOOL bAltPressed = (pKeyStruct->flags & LLKHF_ALTDOWN) != 0;
+				if (bAltPressed)
+				{
+					if (wParam == WM_SYSKEYDOWN)
+					{
+						if (!g_bIsDismissing)
+						{
+							BOOL bSecondTab = FALSE;
+							if (!bAeroFlipActive)
+							{
+								TriggerAeroFlipActivation(hWnd);
+							}
+							else
+							{
+								bSecondTab = TRUE;
+							}
+
+							if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab || bSecondTab)
+							{
+								FlipWindow();
+							}
+						}
+						return 1;
+					}
+
+					if (wParam == WM_SYSKEYUP)
+					{
+						return 1;
+					}
+				}
+			}
+
+			// prevent keys from being sticky
+			if ((pKeyStruct->vkCode == VK_LMENU || pKeyStruct->vkCode == VK_RMENU || pKeyStruct->vkCode == VK_MENU))
+			{
+				if (bAeroFlipActive && (wParam == WM_KEYUP || wParam == WM_SYSKEYUP))
+				{
+					g_bIsDismissing = TRUE;
+					return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
 				}
 			}
 		}
@@ -693,15 +929,78 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 	return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
 }
 
+DWORD WINAPI ConfigFileWatcherThread(LPVOID lpParam)
+{
+	HWND hWndMain = (HWND)lpParam;
+	UNREFERENCED_PARAMETER(hWndMain);
+
+	std::wstring fullPath = aeroflip::GetConfigIniPath();
+	size_t lastSlash = fullPath.find_last_of(L"\\/");
+	if (lastSlash == std::wstring::npos) return 0;
+
+	std::wstring directory = fullPath.substr(0, lastSlash);
+	std::wstring fileName = fullPath.substr(lastSlash + 1);
+
+	HANDLE hNotification = FindFirstChangeNotificationW(
+		directory.c_str(),
+		FALSE,
+		FILE_NOTIFY_CHANGE_LAST_WRITE
+		);
+
+	if (hNotification == INVALID_HANDLE_VALUE) return 0;
+
+	HANDLE waitHandles[2] = { g_hWatcherStopEvent, hNotification };
+
+	while (TRUE)
+	{
+		DWORD dwWaitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+
+		if (dwWaitResult == WAIT_OBJECT_0)
+		{
+			// Stop event was signaled
+			break;
+		}
+		else if (dwWaitResult == WAIT_OBJECT_0 + 1)
+		{
+			// Note: A small sleep handles cases where the writing process locks the file momentarily
+			Sleep(100);
+
+			LoadConfig();
+
+			EnterCriticalSection(&g_csRendererLock);
+			g_bRecreateRenderer = TRUE;
+			LeaveCriticalSection(&g_csRendererLock);
+
+			OutputDebugString(L"[Watcher] Config file updated. Renderer successfully recreated.\n");
+
+			FindNextChangeNotification(hNotification);
+		}
+	}
+
+	FindCloseChangeNotification(hNotification);
+	return 0;
+}
+
+void LoadConfig()
+{
+	g_AeroFlipCfg.kbConfig.InitDefault();
+	g_AeroFlipCfg.rConfig.InitDefault();
+	g_AeroFlipCfg.sConfig.InitDefault();
+
+	DefineIni(IniRead, &g_AeroFlipCfg);
+}
+
 void UpdateWindowAnimations(FLOAT fDeltaTime)
 {
 	INT iNumWindows = (INT)g_DrawObjects.size();
-	if (iNumWindows == 0) return;
+	if (iNumWindows == 0)
+	{
+		return;
+	}
 
-	const UINT uMaxShowWindows = 5;
+	UINT uMaxShowWindows = g_AeroFlipCfg.sConfig.uMaxWindowsVisible;
 
-	FLOAT fLerpFactor = 12.0f * fDeltaTime;
-	if (fLerpFactor > 1.0f) fLerpFactor = 1.0f;
+	FLOAT fLerpFactor = min(g_AeroFlipCfg.sConfig.iAnimationSpeed * fDeltaTime, 1.0f);
 
 	FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
 	FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYSCREEN);
@@ -713,13 +1012,12 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		auto& window = g_DrawObjects[i];
 		INT iRelativeIndex = (i - (INT)g_uActiveIndex + iNumWindows) % iNumWindows;
 
-
 		const FLOAT fTargetBaseX = 1.0f;
-		const FLOAT fTargetBaseY = -0.9f;
+		const FLOAT fTargetBaseY = -0.7f;
 		const FLOAT fTargetBaseZ = 3.0f;
 
-		const FLOAT fTargetOffsetX = -1.2f;
-		const FLOAT fTargetOffsetY = 1.2f;
+		const FLOAT fTargetOffsetX = -g_AeroFlipCfg.sConfig.iHorizontalSpacingMM / 1000.0f;
+		const FLOAT fTargetOffsetY = g_AeroFlipCfg.sConfig.iVerticalSpacingMM / 1000.0f;
 		const FLOAT fTargetOffsetZ = 1.5f;
 
 		FLOAT fTargetX = fTargetBaseX + iRelativeIndex * fTargetOffsetX;
@@ -729,7 +1027,7 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		FLOAT fTargetRotY = -30.0f;
 		FLOAT fTargetOpacity = 1.0f;
 
-		if (iRelativeIndex >= uMaxShowWindows)
+		if (iRelativeIndex >= (INT)uMaxShowWindows)
 		{
 			fTargetOpacity = max(0.0f, 0.75f - 0.25f * (iRelativeIndex - uMaxShowWindows));
 		}
@@ -739,37 +1037,38 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 
 		if (g_bIsDismissing)
 		{
+			FLOAT w = (FLOAT)(window.rcBounds.right - window.rcBounds.left);
+			if (w <= 0)
+			{
+				w = 100.0f;
+			}
+			FLOAT h = (FLOAT)(window.rcBounds.bottom - window.rcBounds.top);
+			if (h <= 0)
+			{
+				h = 100.0f;
+			}
+			FLOAT cx = window.rcBounds.left + w / 2.0f;
+			FLOAT cy = window.rcBounds.top + h / 2.0f;
+
+			fTargetX = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
+			fTargetY = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
+			fTargetZ = 0.04f;
+			fTargetRotY = 0.0f;
+			fTargetOpacity = 1.0f;
+
+			FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
+			fTargetScaleX = matchScale;
+			fTargetScaleY = matchScale;
+
 			if (iRelativeIndex == 0)
 			{
-				FLOAT w = (FLOAT)(window.rcBounds.right - window.rcBounds.left);
-				if (w <= 0)
-				{
-					w = 100.0f;
-				}
-				FLOAT h = (FLOAT)(window.rcBounds.bottom - window.rcBounds.top);
-				if (h <= 0)
-				{
-					h = 100.0f;
-				}
-				FLOAT cx = window.rcBounds.left + w / 2.0f;
-				FLOAT cy = window.rcBounds.top + h / 2.0f;
-
-				fTargetX = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
-				fTargetY = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
-				fTargetZ = 0.04f;
-				fTargetRotY = 0.0f;
-				fTargetOpacity = 1.0f;
-
-				FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
-				fTargetScaleX = matchScale;
-				fTargetScaleY = matchScale;
-
-				window.iZOrder = 999;
 			}
 			else
 			{
-				fTargetOpacity = 0.0f;
-				window.iZOrder = iRelativeIndex;
+				if (!g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping)
+				{
+					fTargetOpacity = 0.0f;
+				}
 			}
 		}
 		else if (iRelativeIndex == (iNumWindows - 1) && g_bIsCycling)
@@ -893,14 +1192,39 @@ void FocusDesktopViaShell()
 	}
 }
 
-void HideWindowsFromView()
-{
-	if (!g_pWindowProvider)
-	{
-		return;
-	}
-}
-
-void RestoreWindowsFromView()
-{
-}
+//void HideWindowsFromView(HWND hWnd)
+//{
+//	UINT cWindows = 0;
+//	const aeroflip::SWindowTarget* pWindows = NULL;
+//	g_pWindowProvider->QueryWindows(&pWindows, &cWindows);
+//
+//	for (UINT i = 0; i < cWindows; ++i)
+//	{
+//		if (!pWindows[i].bDesktopWindow)
+//		{
+//			BOOL bCloak = TRUE;
+//			DwmSetWindowAttribute(pWindows[i].hWnd, DWMWA_CLOAK, &bCloak, sizeof(bCloak));
+//		}
+//	}
+//	DwmpActivateLivePreview(TRUE, NULL, hWnd, 3, NULL, 0x3244);
+//}
+//
+//
+//
+//void RestoreWindowsFromView(HWND hWnd)
+//{
+//	UINT cWindows = 0;
+//	const aeroflip::SWindowTarget* pWindows = NULL;
+//	g_pWindowProvider->QueryWindows(&pWindows, &cWindows);
+//
+//	for (UINT i = 0; i < cWindows; ++i)
+//	{
+//		if (!pWindows[i].bDesktopWindow)
+//		{
+//			BOOL bCloak = FALSE;
+//			DwmSetWindowAttribute(pWindows[i].hWnd, DWMWA_CLOAK, &bCloak, sizeof(bCloak));
+//			DwmpActivateLivePreview(FALSE, pWindows[i].hWnd, hWnd, DWMP_WINDOW, NULL, 0x3244);
+//		}
+//	}
+//	DwmpActivateLivePreview(FALSE, NULL, hWnd, 30, NULL, 0x3244);
+//}
