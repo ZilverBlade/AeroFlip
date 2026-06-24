@@ -380,7 +380,7 @@ namespace aeroflip
 		ResetD3D9ExDevice();
 	}
 
-	void CD3D9ExRendererApi::OnRender(const SWindowDrawObject* pWindows, UINT cWindows, BOOL bRenderDesktopFullScreen)
+	void CD3D9ExRendererApi::OnRender(const SWindowDrawObject* pWindows, UINT cWindows, BOOL bRenderDesktopFullScreen, const FLOAT* pvCameraOrigin)
 	{
 		if (!m_pD3D9ExDevice) return;
 
@@ -437,16 +437,12 @@ namespace aeroflip
 			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE));
 			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_TFACTOR));
 
+			FLOAT Sw = static_cast<FLOAT>(GetSystemMetrics(SM_CXVIRTUALSCREEN));
+			FLOAT Sh = static_cast<FLOAT>(GetSystemMetrics(SM_CYVIRTUALSCREEN));
 			D3DXMATRIX matProj, matView;
-			FLOAT fScreenAspect = static_cast<FLOAT>(GetSystemMetrics(SM_CXSCREEN)) / static_cast<FLOAT>(GetSystemMetrics(SM_CYSCREEN));
+			FLOAT fScreenAspect = Sw / Sh;
 			D3DXMatrixPerspectiveFovLH(&matProj, D3DXToRadian(45.0f), fScreenAspect, 0.1f, 100.0f);
 			DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_PROJECTION, &matProj));
-
-			D3DXVECTOR3 origin(0.0f, 0.0f, -5.0f);
-			D3DXVECTOR3 target(0.0f, 0.0f, 0.0f);
-			D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
-			D3DXMatrixLookAtLH(&matView, &origin, &target, &up);
-			DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));
 
 			if (bRenderDesktopFullScreen)
 			{
@@ -454,10 +450,16 @@ namespace aeroflip
 				{
 					if (pWindows[i].bDesktopBg)
 					{
+						D3DXVECTOR3 origin(0.0f, 0.0f, pvCameraOrigin[2]);
+						D3DXVECTOR3 target(0.0f, 0.0f, 0.0f);
+						D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
+						D3DXMatrixLookAtLH(&matView, &origin, &target, &up);
+						DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));
+
 						SWindowDrawObject wdoBackground;
 						memcpy(&wdoBackground, pWindows + i, sizeof(SWindowDrawObject));
-						FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
-						FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYSCREEN);
+						FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXVIRTUALSCREEN);
+						FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYVIRTUALSCREEN);
 						FLOAT H_frust = 4.224978f;
 						FLOAT W_frust = H_frust * (Sw / Sh);
 
@@ -476,17 +478,24 @@ namespace aeroflip
 						wdoBackground.fScale[0] = matchScale;
 						wdoBackground.fScale[1] = matchScale;
 						wdoBackground.fScale[2] = 1.0f;
+
 						RenderDrawObject(&wdoBackground);
 						break;
 					}
 				}
 			}
-
-			for (INT i = static_cast<INT>(cWindows)-1; i >= 0; --i)
 			{
-				RenderDrawObject(pWindows + i);
-			}
+				D3DXVECTOR3 origin(pvCameraOrigin[0], pvCameraOrigin[1], pvCameraOrigin[2]);
+				D3DXVECTOR3 target(0.0f, 0.0f, 0.0f);
+				D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
+				D3DXMatrixLookAtLH(&matView, &origin, &target, &up);
+				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));
 
+				for (INT i = static_cast<INT>(cWindows)-1; i >= 0; --i)
+				{
+					RenderDrawObject(pWindows + i);
+				}
+			}
 			DEVICE_CALL(m_pD3D9ExDevice->EndScene());
 		}
 
@@ -628,7 +637,7 @@ namespace aeroflip
 			pTexture = it->second.pD3D9Texture;
 		}
 
-		if (!pTexture || pWindow->fOpacity < 1.0f / 255.0f) 
+		if (!pTexture || pWindow->fOpacity < 1.0f / 255.0f)
 		{
 			return;
 		}

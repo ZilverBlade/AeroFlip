@@ -62,6 +62,8 @@ BOOL g_bIsDismissing = FALSE;							// Tracks if AeroFlip has released Alt+Tab
 BOOL g_bIsCycling = FALSE;								// Tracks if alt+tab cycle is happening now
 UINT g_uActiveIndex = 0;								// Tracks which window index is front and center
 HWND g_hLastActiveWindow = NULL;						// Tracks which window was active right before AeroFlip
+MONITORINFO g_miLastActiveMonitor;
+float g_vCameraOrigin[3] = { 0 };
 LARGE_INTEGER g_liLastTime = { 0 };						// Stores the previous frame timestamp
 double g_dFreq = 0.0;									// QPC Clock Frequency scalar
 std::vector<aeroflip::SWindowDrawObject> g_DrawObjects;
@@ -269,7 +271,9 @@ int APIENTRY _tWinMain(
 						{
 							return a.iZOrder < b.iZOrder;
 						});
-						g_pRenderer->OnRender(draws.data(), (UINT)draws.size(), g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping);
+
+						g_pRenderer->OnRender(draws.data(), (UINT)draws.size(),
+							g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping, g_vCameraOrigin);
 					}
 				}
 				else
@@ -331,12 +335,17 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 	g_hst = hInstance;
 
+	INT vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+	INT vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+	INT vcx = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+	INT vcy = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
 	HWND hWnd = CreateWindowEx(
 		WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
 		g_szWindowClass,
 		g_szTitle,
 		WS_POPUP,
-		0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN),
+		vx, vy, vcx, vcy,
 		NULL, NULL, hInstance, NULL
 		);
 
@@ -593,8 +602,11 @@ void UpdateDrawObjects()
 
 		if (!bFoundOld)
 		{
-			FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
-			FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYSCREEN);
+			FLOAT vx = (FLOAT)GetSystemMetrics(SM_XVIRTUALSCREEN);
+			FLOAT vy = (FLOAT)GetSystemMetrics(SM_YVIRTUALSCREEN);
+			FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXVIRTUALSCREEN);
+			FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
 			FLOAT H_frust = 4.224978f;
 			FLOAT W_frust = H_frust * (Sw / Sh);
 
@@ -611,8 +623,8 @@ void UpdateDrawObjects()
 			FLOAT cx = r.left + w / 2.0f;
 			FLOAT cy = r.top + h / 2.0f;
 
-			updatedObjects[i].fPosition[0] = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
-			updatedObjects[i].fPosition[1] = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
+			updatedObjects[i].fPosition[0] = (((cx - vx) / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
+			updatedObjects[i].fPosition[1] = (1.0f - ((cy - vy) / Sh) * 2.0f) * (H_frust / 2.0f);
 			updatedObjects[i].fPosition[2] = 0.1f;
 			updatedObjects[i].fRotationY = 0.0f;
 			updatedObjects[i].fOpacity = 1.0f;
@@ -624,7 +636,6 @@ void UpdateDrawObjects()
 		}
 	}
 	g_DrawObjects = std::move(updatedObjects);
-
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -633,6 +644,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 	switch (message)
 	{
+	case WM_DISPLAYCHANGE:
+	{
+		INT vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+		INT vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+		INT vcx = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+		INT vcy = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+		MoveWindow(hWnd, vx, vy, vcx, vcy, TRUE);
+
+		EnterCriticalSection(&g_csRendererLock);
+		g_bRecreateRenderer = TRUE;
+		LeaveCriticalSection(&g_csRendererLock);
+
+		g_bWindowListDirty = TRUE;
+	}
+	break;
 	case WM_TRAYICON:
 		if (LOWORD(lParam) == WM_RBUTTONUP)
 		{
@@ -816,6 +843,10 @@ void TriggerAeroFlipActivation(HWND hWnd)
 		g_uActiveIndex = 0;
 		g_hLastActiveWindow = pWindows[0].hWnd;
 	}
+
+	HMONITOR hMon = MonitorFromWindow(g_hLastActiveWindow, MONITOR_DEFAULTTOPRIMARY);
+	g_miLastActiveMonitor = { sizeof(MONITORINFO) };
+	GetMonitorInfo(hMon, &g_miLastActiveMonitor);
 
 	WakeAeroFlip(hWnd);
 }
@@ -1002,27 +1033,53 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 
 	FLOAT fLerpFactor = min(g_AeroFlipCfg.sConfig.iAnimationSpeed * fDeltaTime, 1.0f);
 
-	FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
-	FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYSCREEN);
+	FLOAT vx = (FLOAT)GetSystemMetrics(SM_XVIRTUALSCREEN);
+	FLOAT vy = (FLOAT)GetSystemMetrics(SM_YVIRTUALSCREEN);
+	FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXVIRTUALSCREEN);
+	FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+	FLOAT mx = (FLOAT)g_miLastActiveMonitor.rcMonitor.left;
+	FLOAT my = (FLOAT)g_miLastActiveMonitor.rcMonitor.top;
+	FLOAT mcx = (FLOAT)g_miLastActiveMonitor.rcMonitor.right - g_miLastActiveMonitor.rcMonitor.left;
+	FLOAT mcy = (FLOAT)g_miLastActiveMonitor.rcMonitor.bottom - g_miLastActiveMonitor.rcMonitor.top;
+
 	FLOAT H_frust = 4.224978f;
 	FLOAT W_frust = H_frust * (Sw / Sh);
+
+	FLOAT fMonitorCornerX = vx + mx;
+	FLOAT fMonitorCornerY = vy + my;
+
+	const FLOAT fRatioX = 1.0f / (Sw / mcx);
+	const FLOAT fRatioY = 1.0f / (Sh / mcy);
+
+	const FLOAT fBaseOffsetCornerX = (fMonitorCornerX / Sw);
+	const FLOAT fBaseOffsetCornerY = (fMonitorCornerY / Sh);
+
+	g_vCameraOrigin[0] = fBaseOffsetCornerX;
+	g_vCameraOrigin[1] = fBaseOffsetCornerY;
+	g_vCameraOrigin[2] = -5.0f;
+
+	const FLOAT fTargetBaseX = 1.0f + fBaseOffsetCornerX;
+	const FLOAT fTargetBaseY = -0.7f + fBaseOffsetCornerY;
+	const FLOAT fTargetBaseZ = 3.0f;
+
+	const FLOAT fTargetOffsetX = fRatioX * -g_AeroFlipCfg.sConfig.iHorizontalSpacingMM / 1000.0f;
+	const FLOAT fTargetOffsetY = fRatioY * g_AeroFlipCfg.sConfig.iVerticalSpacingMM / 1000.0f;
+	const FLOAT fTargetOffsetZ = 1.5f;
+
+	const FLOAT fBaseScale = 1.2f;
 
 	for (INT i = 0; i < iNumWindows; ++i)
 	{
 		auto& window = g_DrawObjects[i];
 		INT iRelativeIndex = (i - (INT)g_uActiveIndex + iNumWindows) % iNumWindows;
 
-		const FLOAT fTargetBaseX = 1.0f;
-		const FLOAT fTargetBaseY = -0.7f;
-		const FLOAT fTargetBaseZ = 3.0f;
-
-		const FLOAT fTargetOffsetX = -g_AeroFlipCfg.sConfig.iHorizontalSpacingMM / 1000.0f;
-		const FLOAT fTargetOffsetY = g_AeroFlipCfg.sConfig.iVerticalSpacingMM / 1000.0f;
-		const FLOAT fTargetOffsetZ = 1.5f;
-
 		FLOAT fTargetX = fTargetBaseX + iRelativeIndex * fTargetOffsetX;
 		FLOAT fTargetY = fTargetBaseY + iRelativeIndex * fTargetOffsetY;
 		FLOAT fTargetZ = fTargetBaseZ + iRelativeIndex * fTargetOffsetZ;
+
+		FLOAT fTargetScaleX = max(fRatioX, fRatioY) * fBaseScale;
+		FLOAT fTargetScaleY = max(fRatioX, fRatioY) * fBaseScale;
 
 		FLOAT fTargetRotY = -30.0f;
 		FLOAT fTargetOpacity = 1.0f;
@@ -1032,11 +1089,9 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 			fTargetOpacity = max(0.0f, 0.75f - 0.25f * (iRelativeIndex - uMaxShowWindows));
 		}
 
-		FLOAT fTargetScaleX = 1.2f;
-		FLOAT fTargetScaleY = 1.2f;
-
 		if (g_bIsDismissing)
 		{
+			// RESTORE
 			FLOAT w = (FLOAT)(window.rcBounds.right - window.rcBounds.left);
 			if (w <= 0)
 			{
@@ -1050,8 +1105,8 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 			FLOAT cx = window.rcBounds.left + w / 2.0f;
 			FLOAT cy = window.rcBounds.top + h / 2.0f;
 
-			fTargetX = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
-			fTargetY = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
+			fTargetX = (((cx - vx) / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
+			fTargetY = (1.0f - ((cy - vy) / Sh) * 2.0f) * (H_frust / 2.0f);
 			fTargetZ = 0.04f;
 			fTargetRotY = 0.0f;
 			fTargetOpacity = 1.0f;
@@ -1060,19 +1115,14 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 			fTargetScaleX = matchScale;
 			fTargetScaleY = matchScale;
 
-			if (iRelativeIndex == 0)
+			if (iRelativeIndex != 0 && (window.bDesktopBg || !g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping))
 			{
-			}
-			else
-			{
-				if (!g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping)
-				{
-					fTargetOpacity = 0.0f;
-				}
+				fTargetOpacity = 0.0f;
 			}
 		}
 		else if (iRelativeIndex == (iNumWindows - 1) && g_bIsCycling)
 		{
+			// FLIPPED
 			if (window.dwMoveMode != aeroflip::eWDOMM_MOVING_TO_BACK)
 			{
 				window.dwMoveMode = aeroflip::eWDOMM_MOVING_TO_BACK;
