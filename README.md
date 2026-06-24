@@ -23,9 +23,11 @@ Open the solution file, and select your target architecture. Then select either 
 ### SCREENSHOTS
 
 ![AeroFlip Desktop Example, Activated With Alt Tab](screenshots/preview.jpg "AeroFlip Activated")
+
 _(Running on Windows 10, using other styling tools such as [RetroBar](https://github.com/dremin/Retrobar) and [DWMBlurGlass](https://github.com/Maplespe/DWMBlurGlass), these libraries are NOT included!)_
 
 ![AeroFlip Config Screenshot](screenshots/config.jpg "AeroFlip Configurator")
+
 _(AeroFlip Configurator, screenshot from v1.2-beta)_
 
 
