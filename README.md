@@ -31,11 +31,11 @@ _(Running on Windows 10, using other styling tools such as [RetroBar](https://gi
 
 ![AeroFlip Config Screenshot](screenshots/config.jpg "AeroFlip Configurator")
 
-_(AeroFlip Configurator, screenshot from v1.2-beta)_
+_(AeroFlip Configurator, screenshot from v1.3)_
 
 ### Known bugs:
 
-* _No breaking bugs known as of now._
+* Semi-transparent windows slightly leak the desktop. This is not very noticeable but still an issue nonetheless.
 
 # Implementation
 
