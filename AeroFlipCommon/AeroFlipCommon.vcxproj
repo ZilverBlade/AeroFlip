@@ -68,6 +68,7 @@
     <ClInclude Include="EFlipShortcutMode.h" />
     <ClInclude Include="ERendererMode.h" />
     <ClInclude Include="ETextureQuality.h" />
+    <ClInclude Include="EWindowFrameStyle.h" />
     <ClInclude Include="SAeroFlipConfig.h" />
     <ClInclude Include="SKeyBindConfig.h" />
     <ClInclude Include="SRendererConfig.h" />

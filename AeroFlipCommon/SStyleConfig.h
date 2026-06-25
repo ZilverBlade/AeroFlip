@@ -27,7 +27,7 @@ namespace aeroflip
 		void InitDefault()
 		{
 			bShowDesktopWhenFlipping = TRUE;
-			uDesktopDimmingPercent = 20;
+			uDesktopDimmingPercent = 40;
 			uMaxWindowsVisible = 5;
 			iHorizontalSpacingMM = 1200;
 			iVerticalSpacingMM = 600;

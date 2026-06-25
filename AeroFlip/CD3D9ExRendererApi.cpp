@@ -6,6 +6,8 @@
 
 #include <d3dx9.h> 
 
+#include <string>
+
 namespace aeroflip
 {
 #define DEVICE_CALL(call)                                                                   \
@@ -380,8 +382,8 @@ namespace aeroflip
 		ResetD3D9ExDevice();
 	}
 
-	void CD3D9ExRendererApi::OnRender(const SWindowDrawObject* pWindows, UINT cWindows, 
-		BOOL bRenderDesktopFullScreen, const FLOAT* pvCameraOrigin, const FLOAT* pvMonitorShift)
+	void CD3D9ExRendererApi::OnRender(const SWindowDrawObject* pWindows, UINT cWindows,
+		BOOL bRenderDesktopFullScreen, FLOAT fDesktopOpacityFactor, const FLOAT* pvMonitorShift)
 	{
 		if (!m_pD3D9ExDevice) return;
 
@@ -396,7 +398,7 @@ namespace aeroflip
 			throw std::runtime_error("D3D9 device lost!");
 		}
 
-		D3DCOLOR clearColor = D3DCOLOR_ARGB(0, 0, 0, 0);
+		D3DCOLOR clearColor = D3DCOLOR_ARGB(bRenderDesktopFullScreen ? 0 : (min(UINT(fDesktopOpacityFactor * 255), 255)), 0, 0, 0);
 		m_pD3D9ExDevice->Clear(0, NULL, D3DCLEAR_TARGET, clearColor, 1.0f, 0);
 
 		if (SUCCEEDED(m_pD3D9ExDevice->BeginScene()))
@@ -438,6 +440,10 @@ namespace aeroflip
 			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE));
 			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_TFACTOR));
 
+			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE));
+			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE));
+			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_TFACTOR));
+
 			FLOAT Sw = static_cast<FLOAT>(GetSystemMetrics(SM_CXVIRTUALSCREEN));
 			FLOAT Sh = static_cast<FLOAT>(GetSystemMetrics(SM_CYVIRTUALSCREEN));
 			D3DXMATRIX matProj, matView;
@@ -445,18 +451,18 @@ namespace aeroflip
 			D3DXMatrixPerspectiveFovLH(&matProj, D3DXToRadian(45.0f), fScreenAspect, 0.1f, 100.0f);
 			DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_PROJECTION, &matProj));
 
+			D3DXVECTOR3 origin(0.0f, 0.0f, -5.0f);
+			D3DXVECTOR3 target(0.0f, 0.0f, 0.0f);
+			D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
+			D3DXMatrixLookAtLH(&matView, &origin, &target, &up);
+			DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));
+
 			if (bRenderDesktopFullScreen)
 			{
 				for (INT i = static_cast<INT>(cWindows)-1; i >= 0; --i)
 				{
 					if (pWindows[i].bDesktopBg)
 					{
-						D3DXVECTOR3 origin(0.0f, 0.0f, pvCameraOrigin[2]);
-						D3DXVECTOR3 target(0.0f, 0.0f, 0.0f);
-						D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
-						D3DXMatrixLookAtLH(&matView, &origin, &target, &up);
-						DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));
-
 						SWindowDrawObject wdoBackground;
 						memcpy(&wdoBackground, pWindows + i, sizeof(SWindowDrawObject));
 						FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXVIRTUALSCREEN);
@@ -480,7 +486,11 @@ namespace aeroflip
 						wdoBackground.fScale[1] = matchScale;
 						wdoBackground.fScale[2] = 1.0f;
 
-						RenderDrawObject(&wdoBackground);
+						FLOAT fvTint[3] = { 0 };
+						fvTint[0] = fDesktopOpacityFactor;
+						fvTint[1] = fDesktopOpacityFactor;
+						fvTint[2] = fDesktopOpacityFactor;
+						RenderDrawObject(&wdoBackground, fvTint);
 						break;
 					}
 				}
@@ -501,18 +511,12 @@ namespace aeroflip
 
 				D3DMATRIX matFinalProj;
 				D3DXMatrixMultiply((D3DXMATRIX*)&matFinalProj, (D3DXMATRIX*)&matProj, (D3DXMATRIX*)&matShift);
-
 				m_pD3D9ExDevice->SetTransform(D3DTS_PROJECTION, &matFinalProj);
-
-				D3DXVECTOR3 origin(pvCameraOrigin[0], pvCameraOrigin[1], pvCameraOrigin[2]);
-				D3DXVECTOR3 target(pvCameraOrigin[0], pvCameraOrigin[1], 0.0f);
-				D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
-				D3DXMatrixLookAtLH(&matView, &origin, &target, &up);
-				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));
 
 				for (INT i = static_cast<INT>(cWindows)-1; i >= 0; --i)
 				{
-					RenderDrawObject(pWindows + i);
+					static FLOAT g_fvTint[3] = { 1, 1, 1 };
+					RenderDrawObject(pWindows + i, g_fvTint);
 				}
 			}
 			DEVICE_CALL(m_pD3D9ExDevice->EndScene());
@@ -525,7 +529,7 @@ namespace aeroflip
 	{
 		if (!SUCCEEDED(Direct3DCreate9Ex(D3D_SDK_VERSION, &m_pD3D9Ex)))
 		{
-			throw std::runtime_error("Failed to init Direct3D9!");
+			throw std::runtime_error("Failed to initialise Direct3D 9 Ex!");
 		}
 	}
 
@@ -647,7 +651,7 @@ namespace aeroflip
 		}
 	}
 
-	void CD3D9ExRendererApi::RenderDrawObject(const SWindowDrawObject* pWindow)
+	void CD3D9ExRendererApi::RenderDrawObject(const SWindowDrawObject* pWindow, const FLOAT* pvTint)
 	{
 		IDirect3DTexture9* pTexture = NULL;
 		auto it = m_WindowTextureMap.find(pWindow->hTargetWnd);
@@ -676,9 +680,11 @@ namespace aeroflip
 		matWorld = matScale * matRotY * matTranslate;
 		DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_WORLD, &matWorld));
 
-		DWORD bAlpha = static_cast<DWORD>(pWindow->fOpacity * 255.0f);
-		if (bAlpha > 255) bAlpha = 255;
-		DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_TEXTUREFACTOR, (bAlpha << 24) | 0x00FFFFFF));
+		DWORD dwAlpha = static_cast<DWORD>(pWindow->fOpacity * 255.0f);
+		if (dwAlpha > 255) dwAlpha = 255;
+		D3DCOLOR tintColor = D3DCOLOR_ARGB(dwAlpha, min(UINT(pvTint[0] * 255), 255),
+			min(UINT(pvTint[1] * 255), 255), min(UINT(pvTint[2] * 255), 255));
+		DEVICE_CALL(m_pD3D9ExDevice->SetRenderState(D3DRS_TEXTUREFACTOR, tintColor));
 
 		DEVICE_CALL(m_pD3D9ExDevice->SetTexture(0, pTexture));
 		DEVICE_CALL(m_pD3D9ExDevice->SetFVF(D3DFVF_VERTEX3D));

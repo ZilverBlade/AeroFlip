@@ -8,6 +8,6 @@ namespace aeroflip
 		eWFS_NATIVE = 1,
 		eWFS_WINDOWS_AERO = 2,
 
-		eTQ_MAX_ENUM = 0x7fffffff
+		eWFS_MAX_ENUM = 0x7fffffff
 	};
 }

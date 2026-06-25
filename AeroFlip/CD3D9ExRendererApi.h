@@ -16,7 +16,8 @@ namespace aeroflip
 
 		void UpdateWindows(class CWindowProvider* pWindowProvider);
 		void ReleaseWindows();
-		void OnRender(const struct SWindowDrawObject* pWindows, UINT cWindows, BOOL bRenderDesktopFullScreen, const FLOAT* pvCameraOrigin, const FLOAT* pvMonitorShift);
+		void OnRender(const struct SWindowDrawObject* pWindows, UINT cWindows,
+			BOOL bRenderDesktopFullScreen, FLOAT fDesktopOpacityFactor, const FLOAT* pvMonitorShift);
 
 	private:
 		void InitD3D9Ex();
@@ -27,7 +28,7 @@ namespace aeroflip
 
 		void ResetD3D9ExDevice();
 		
-		void RenderDrawObject(const struct SWindowDrawObject* pWindow);
+		void RenderDrawObject(const struct SWindowDrawObject* pWindow, const FLOAT* pvTint);
 	private:
 		IDirect3D9Ex* m_pD3D9Ex = NULL;
 		IDirect3DDevice9Ex* m_pD3D9ExDevice = NULL;

@@ -40,6 +40,11 @@
 #define ID_TRAY_CONFIG      3003
 #define UID_NOTIF_TRAY		1;
 
+static FLOAT fmix(FLOAT fStart, FLOAT fEnd, FLOAT fAlpha)
+{
+	return fStart * (1.0f - fAlpha) + fEnd * fAlpha;
+}
+
 // Global Variables:
 HINSTANCE g_hst = NULL;									// current instance
 TCHAR g_szTitle[MAX_LOADSTRING];						// The title bar text
@@ -63,7 +68,7 @@ BOOL g_bIsCycling = FALSE;								// Tracks if alt+tab cycle is happening now
 UINT g_uActiveIndex = 0;								// Tracks which window index is front and center
 HWND g_hLastActiveWindow = NULL;						// Tracks which window was active right before AeroFlip
 MONITORINFO g_miLastActiveMonitor;
-FLOAT g_vCameraOrigin[3] = { 0 };
+FLOAT g_fDesktopDimmingFactor = 0.0f;
 FLOAT g_vMonitorShift[2] = { 0 };
 LARGE_INTEGER g_liLastTime = { 0 };						// Stores the previous frame timestamp
 DOUBLE g_dFreq = 0.0;									// QPC Clock Frequency scalar
@@ -272,9 +277,18 @@ int APIENTRY _tWinMain(
 						{
 							return a.iZOrder < b.iZOrder;
 						});
-
-						g_pRenderer->OnRender(draws.data(), (UINT)draws.size(),
-							g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping, g_vCameraOrigin, g_vMonitorShift);
+						
+						FLOAT fBgOpacity = g_fDesktopDimmingFactor * g_AeroFlipCfg.sConfig.uDesktopDimmingPercent / 100.0f;
+						if (g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping)
+						{
+							fBgOpacity = fmix(1.0f, g_AeroFlipCfg.sConfig.uDesktopDimmingPercent / 100.0f, g_fDesktopDimmingFactor);
+						}
+						g_pRenderer->OnRender(draws.data(),
+							(UINT)draws.size(),
+							g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping,
+							fBgOpacity,
+							g_vMonitorShift
+							);
 					}
 				}
 				else
@@ -472,6 +486,7 @@ void WakeAeroFlip(HWND hWnd)
 			UpdateDrawObjects();
 		}
 	}
+	g_fDesktopDimmingFactor = 1.0f; // no dim yet
 }
 
 void DismissAeroFlip(HWND hWnd, HWND hSelectedApp, BOOL bDesktopBackground)
@@ -555,7 +570,8 @@ void UpdateDrawObjects()
 		updatedObjects[i].hTargetWnd = pTargets[i].hWnd;
 		updatedObjects[i].bFocused = pTargets[i].bActive;
 		updatedObjects[i].bDesktopBg = pTargets[i].bDesktopWindow;
-		updatedObjects[i].bDecorated = g_AeroFlipCfg.sConfig.bRenderWindowBorders && pTargets[i].bDecorated;
+		updatedObjects[i].bDecorated = g_AeroFlipCfg.sConfig.dwWindowFrameStyle == aeroflip::eWFS_WINDOWS_AERO
+			&& pTargets[i].bDecorated;
 
 		RECT r;
 		ZeroMemory(&r, sizeof(RECT));
@@ -1056,9 +1072,7 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 	g_vMonitorShift[0] = (mx - vx + mcx * 0.5f - fVirtualCenterX) / mcx;
 	g_vMonitorShift[1] = -(my - vy + mcy * 0.5f - fVirtualCenterY) / mcy;
 
-	g_vCameraOrigin[0] = 0.0f;
-	g_vCameraOrigin[1] = 0.0f;
-	g_vCameraOrigin[2] = -5.0f;
+	FLOAT fTargetDim = 1.0f;
 
 	const FLOAT fTargetBaseX = 1.0f;
 	const FLOAT fTargetBaseY = -0.7f;
@@ -1073,6 +1087,16 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 	const BOOL bDismissToDesktop = g_bIsDismissing
 		&& g_uActiveIndex < (UINT)g_DrawObjects.size()
 		&& g_DrawObjects[g_uActiveIndex].bDesktopBg;
+
+	if (g_bIsDismissing)
+	{
+		fTargetDim = 0.0f;
+	}
+	else
+	{
+		fTargetDim = 1.0f;
+	}
+
 
 	for (INT i = 0; i < iNumWindows; ++i)
 	{
@@ -1199,6 +1223,8 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		window.fScale[0] += (fTargetScaleX - window.fScale[0]) * fLerpFactor;
 		window.fScale[1] += (fTargetScaleY - window.fScale[1]) * fLerpFactor;
 	}
+	g_fDesktopDimmingFactor += (fTargetDim - g_fDesktopDimmingFactor) * fLerpFactor;
+	g_fDesktopDimmingFactor = max(min(g_fDesktopDimmingFactor, 1.0f), 0.0f);
 }
 
 void InitializeWindowEventHook()
