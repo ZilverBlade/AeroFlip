@@ -36,6 +36,7 @@ _(AeroFlip Configurator, screenshot from v1.3)_
 ### Known bugs:
 
 * Semi-transparent windows slightly leak the desktop. This is not very noticeable but still an issue nonetheless.
+* When an app is frozen/unresponsive, AeroFlip may lag or even crash when activating 
 
 # Implementation
 
