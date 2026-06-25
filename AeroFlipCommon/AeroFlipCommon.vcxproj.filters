@@ -31,5 +31,8 @@
     <ClInclude Include="CommonsCfg.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="EWindowFrameStyle.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

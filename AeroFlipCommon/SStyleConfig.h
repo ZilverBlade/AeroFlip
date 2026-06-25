@@ -2,7 +2,7 @@
 
 #include <windef.h>
 
-#include "ETextureQuality.h"
+#include "EWindowFrameStyle.h"
 
 namespace aeroflip
 {
@@ -13,23 +13,25 @@ namespace aeroflip
 	struct SStyleConfig
 	{
 		BOOL bShowDesktopWhenFlipping;
-		BOOL bRenderWindowBorders;
+
+		UINT uDesktopDimmingPercent;
 
 		UINT uMaxWindowsVisible;
 
 		INT iHorizontalSpacingMM;
 		INT iVerticalSpacingMM;
 
+		DWORD dwWindowFrameStyle;
 		INT iAnimationSpeed;
 
 		void InitDefault()
 		{
-			// FIXME: disabled until multi monitor setup works!
-			bShowDesktopWhenFlipping = FALSE;
-			bRenderWindowBorders = TRUE;
+			bShowDesktopWhenFlipping = TRUE;
+			uDesktopDimmingPercent = 40;
 			uMaxWindowsVisible = 5;
 			iHorizontalSpacingMM = 1200;
 			iVerticalSpacingMM = 600;
+			dwWindowFrameStyle = eWFS_WINDOWS_AERO;
 			iAnimationSpeed = kAS_NORMAL;
 		}
 	};

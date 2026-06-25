@@ -40,6 +40,11 @@
 #define ID_TRAY_CONFIG      3003
 #define UID_NOTIF_TRAY		1;
 
+static FLOAT fmix(FLOAT fStart, FLOAT fEnd, FLOAT fAlpha)
+{
+	return fStart * (1.0f - fAlpha) + fEnd * fAlpha;
+}
+
 // Global Variables:
 HINSTANCE g_hst = NULL;									// current instance
 TCHAR g_szTitle[MAX_LOADSTRING];						// The title bar text
@@ -62,8 +67,11 @@ BOOL g_bIsDismissing = FALSE;							// Tracks if AeroFlip has released Alt+Tab
 BOOL g_bIsCycling = FALSE;								// Tracks if alt+tab cycle is happening now
 UINT g_uActiveIndex = 0;								// Tracks which window index is front and center
 HWND g_hLastActiveWindow = NULL;						// Tracks which window was active right before AeroFlip
+MONITORINFO g_miLastActiveMonitor;
+FLOAT g_fDesktopDimmingFactor = 0.0f;
+FLOAT g_vMonitorShift[2] = { 0 };
 LARGE_INTEGER g_liLastTime = { 0 };						// Stores the previous frame timestamp
-double g_dFreq = 0.0;									// QPC Clock Frequency scalar
+DOUBLE g_dFreq = 0.0;									// QPC Clock Frequency scalar
 std::vector<aeroflip::SWindowDrawObject> g_DrawObjects;
 
 // Forward declarations of functions included in this code module:
@@ -141,6 +149,20 @@ int APIENTRY _tWinMain(
 		g_pWindowProvider = new aeroflip::CWindowProvider(hWnd, g_szWindowClass);
 		g_pWindowProvider->UpdateWindowList();
 
+		{
+			PROFILE_SCOPE(L"Initial Cache Windows");
+
+			UINT cWindows = 0;
+			const aeroflip::SWindowTarget* pWindows = NULL;
+
+			g_pWindowProvider->QueryWindows(&pWindows, &cWindows);
+
+			for (UINT i = 0; i < cWindows; ++i)
+			{
+				g_pWindowProvider->CacheWindowThumbnail(pWindows[i].hWnd);
+			}
+		}
+
 		g_pRenderer = GetRendererApi(&g_AeroFlipCfg.rConfig, hWnd);
 
 		InitializeWindowEventHook();
@@ -167,16 +189,25 @@ int APIENTRY _tWinMain(
 				{
 					BOOL bDismissTriggered = FALSE;
 
-					if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_WIN_TAB)
+					if (g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit)
 					{
-						// In Win+Tab mode, dismissal is handled directly in LowLevelKeyboardProc asynchronously
+						// In press again mode, dismissal is handled directly in LowLevelKeyboardProc asynchronously
 						bDismissTriggered = g_bIsDismissing;
 					}
 					else
 					{
-						BOOL bAltHeld = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+						BOOL bKeyHeld = FALSE;
+						if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_ALT_TAB)
+						{
+							bKeyHeld = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+						}
+						else if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_WIN_TAB)
+						{
+							bKeyHeld = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
+								(GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
+						}
 
-						if (!bAltHeld)
+						if (!bKeyHeld)
 						{
 							if (!g_bIsDismissing)
 							{
@@ -199,7 +230,7 @@ int APIENTRY _tWinMain(
 						}
 						else
 						{
-							if (g_DrawObjects[g_uActiveIndex].fPosition[2] <= 0.05f)
+							if (g_DrawObjects[g_uActiveIndex].fPosition[2] <= 0.11f)
 							{
 								bDismissComplete = TRUE;
 							}
@@ -269,7 +300,18 @@ int APIENTRY _tWinMain(
 						{
 							return a.iZOrder < b.iZOrder;
 						});
-						g_pRenderer->OnRender(draws.data(), (UINT)draws.size(), g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping);
+
+						FLOAT fBgOpacity = g_fDesktopDimmingFactor * g_AeroFlipCfg.sConfig.uDesktopDimmingPercent / 100.0f;
+						if (g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping)
+						{
+							fBgOpacity = fmix(1.0f, g_AeroFlipCfg.sConfig.uDesktopDimmingPercent / 100.0f, g_fDesktopDimmingFactor);
+						}
+						g_pRenderer->OnRender(draws.data(),
+							(UINT)draws.size(),
+							g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping,
+							fBgOpacity,
+							g_vMonitorShift
+							);
 					}
 				}
 				else
@@ -331,12 +373,17 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 	g_hst = hInstance;
 
+	INT vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+	INT vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+	INT vcx = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+	INT vcy = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
 	HWND hWnd = CreateWindowEx(
 		WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
 		g_szWindowClass,
 		g_szTitle,
 		WS_POPUP,
-		0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN),
+		vx, vy, vcx, vcy,
 		NULL, NULL, hInstance, NULL
 		);
 
@@ -462,6 +509,7 @@ void WakeAeroFlip(HWND hWnd)
 			UpdateDrawObjects();
 		}
 	}
+	g_fDesktopDimmingFactor = 1.0f; // no dim yet
 }
 
 void DismissAeroFlip(HWND hWnd, HWND hSelectedApp, BOOL bDesktopBackground)
@@ -545,7 +593,8 @@ void UpdateDrawObjects()
 		updatedObjects[i].hTargetWnd = pTargets[i].hWnd;
 		updatedObjects[i].bFocused = pTargets[i].bActive;
 		updatedObjects[i].bDesktopBg = pTargets[i].bDesktopWindow;
-		updatedObjects[i].bDecorated = g_AeroFlipCfg.sConfig.bRenderWindowBorders && pTargets[i].bDecorated;
+		updatedObjects[i].bDecorated = g_AeroFlipCfg.sConfig.dwWindowFrameStyle == aeroflip::eWFS_WINDOWS_AERO
+			&& pTargets[i].bDecorated;
 
 		RECT r;
 		ZeroMemory(&r, sizeof(RECT));
@@ -593,8 +642,11 @@ void UpdateDrawObjects()
 
 		if (!bFoundOld)
 		{
-			FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
-			FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYSCREEN);
+			FLOAT vx = (FLOAT)GetSystemMetrics(SM_XVIRTUALSCREEN);
+			FLOAT vy = (FLOAT)GetSystemMetrics(SM_YVIRTUALSCREEN);
+			FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXVIRTUALSCREEN);
+			FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
 			FLOAT H_frust = 4.224978f;
 			FLOAT W_frust = H_frust * (Sw / Sh);
 
@@ -611,8 +663,8 @@ void UpdateDrawObjects()
 			FLOAT cx = r.left + w / 2.0f;
 			FLOAT cy = r.top + h / 2.0f;
 
-			updatedObjects[i].fPosition[0] = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
-			updatedObjects[i].fPosition[1] = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
+			updatedObjects[i].fPosition[0] = (((cx - vx) / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
+			updatedObjects[i].fPosition[1] = (1.0f - ((cy - vy) / Sh) * 2.0f) * (H_frust / 2.0f);
 			updatedObjects[i].fPosition[2] = 0.1f;
 			updatedObjects[i].fRotationY = 0.0f;
 			updatedObjects[i].fOpacity = 1.0f;
@@ -624,7 +676,6 @@ void UpdateDrawObjects()
 		}
 	}
 	g_DrawObjects = std::move(updatedObjects);
-
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -633,6 +684,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 	switch (message)
 	{
+	case WM_DISPLAYCHANGE:
+	{
+		INT vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+		INT vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+		INT vcx = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+		INT vcy = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+		MoveWindow(hWnd, vx, vy, vcx, vcy, TRUE);
+
+		EnterCriticalSection(&g_csRendererLock);
+		g_bRecreateRenderer = TRUE;
+		LeaveCriticalSection(&g_csRendererLock);
+
+		g_bWindowListDirty = TRUE;
+	}
+	break;
 	case WM_TRAYICON:
 		if (LOWORD(lParam) == WM_RBUTTONUP)
 		{
@@ -757,11 +824,10 @@ void CALLBACK WinEventProc(
 	}
 }
 
-void FlipWindow()
+void FlipWindow(BOOL bShiftPressed)
 {
 	if (!g_DrawObjects.empty())
 	{
-		bool bShiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 		if (bShiftPressed && g_AeroFlipCfg.kbConfig.bShiftToMoveBack)
 		{
 			g_uActiveIndex = (g_uActiveIndex + g_DrawObjects.size() - 1) % (UINT)g_DrawObjects.size();
@@ -777,11 +843,15 @@ void FlipWindow()
 void TriggerAeroFlipActivation(HWND hWnd)
 {
 	g_bWindowListDirty = TRUE;
-	g_hLastActiveWindow = GetForegroundWindow();
-
-	if (g_hLastActiveWindow != hWnd)
+	if (!IsWindowVisible(hWnd))
 	{
-		g_pWindowProvider->FlagActiveWindow(g_hLastActiveWindow);
+		HWND hFgWnd = GetForegroundWindow();
+
+		if (hFgWnd != hWnd)
+		{
+			g_pWindowProvider->FlagActiveWindow(hFgWnd);
+			g_hLastActiveWindow = hFgWnd;
+		}
 	}
 
 	UINT cWindows = 0;
@@ -817,6 +887,10 @@ void TriggerAeroFlipActivation(HWND hWnd)
 		g_hLastActiveWindow = pWindows[0].hWnd;
 	}
 
+	HMONITOR hMon = MonitorFromWindow(g_hLastActiveWindow, MONITOR_DEFAULTTOPRIMARY);
+	g_miLastActiveMonitor = { sizeof(MONITORINFO) };
+	GetMonitorInfo(hMon, &g_miLastActiveMonitor);
+
 	WakeAeroFlip(hWnd);
 }
 
@@ -831,12 +905,13 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 		if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_WIN_TAB)
 		{
 			BOOL bWinDown = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
+			BOOL bShiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 
-			if (pKeyStruct->vkCode == VK_TAB && bAeroFlipActive)
+			if ((g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit || bWinDown) && pKeyStruct->vkCode == VK_TAB && bAeroFlipActive)
 			{
 				if (wParam == WM_KEYDOWN)
 				{
-					FlipWindow();
+					FlipWindow(bShiftPressed);
 				}
 				return 1; // Suppress built-in system task cycling
 			}
@@ -854,27 +929,71 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 
 					if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab)
 					{
-						FlipWindow();
+						FlipWindow(bShiftPressed);
 					}
 				}
 				return 1;
 			}
 
-			// Trap Windows keys to dismiss if window is open
-			if (pKeyStruct->vkCode == VK_LWIN || pKeyStruct->vkCode == VK_RWIN)
+			if (pKeyStruct->vkCode == VK_TAB && bWinDown && bAeroFlipActive)
 			{
-				if (bAeroFlipActive)
+				if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)
+				{
+					INPUT input = { 0 };
+					input.type = INPUT_KEYBOARD;
+					input.ki.wVk = VK_NONAME;
+					SendInput(1, &input, sizeof(INPUT));
+
+					FlipWindow(bShiftPressed);
+				}
+				return 1;
+			}
+			if (g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit)
+			{
+				// Trap Windows keys to dismiss if window is open
+				if (pKeyStruct->vkCode == VK_LWIN || pKeyStruct->vkCode == VK_RWIN)
+				{
+					if (bAeroFlipActive)
+					{
+						if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
+						{
+							return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+						}
+
+						if (wParam == WM_KEYDOWN)
+						{
+							g_bIsDismissing = !g_bIsDismissing;
+							return 1;
+						}
+					}
+				}
+			}
+			else
+			{
+				// prevent keys from being sticky
+				if ((pKeyStruct->vkCode == VK_LWIN || pKeyStruct->vkCode == VK_RWIN))
+				{
+					if (bAeroFlipActive && (wParam == WM_KEYUP || wParam == WM_SYSKEYUP))
+					{
+						g_bIsDismissing = TRUE;
+						return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+					}
+				}
+			}
+
+			if (pKeyStruct->vkCode == VK_LSHIFT || pKeyStruct->vkCode == VK_RSHIFT || pKeyStruct->vkCode == VK_SHIFT)
+			{
+				if (bAeroFlipActive && bWinDown)
 				{
 					if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
 					{
+						INPUT input = { 0 };
+						input.type = INPUT_KEYBOARD;
+						input.ki.wVk = VK_NONAME;
+						SendInput(1, &input, sizeof(INPUT));
 						return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
 					}
-
-					if (wParam == WM_KEYDOWN)
-					{
-						g_bIsDismissing = !g_bIsDismissing;
-						return 1;
-					}
+					return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
 				}
 			}
 		}
@@ -883,30 +1002,45 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 			if (pKeyStruct->vkCode == VK_TAB)
 			{
 				BOOL bAltPressed = (pKeyStruct->flags & LLKHF_ALTDOWN) != 0;
+				BOOL bShiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+
+				if (!bAltPressed && bAeroFlipActive && g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit)
+				{
+					if (wParam == WM_KEYDOWN)
+					{
+						FlipWindow(bShiftPressed);
+					}
+					return 1;
+				}
+
 				if (bAltPressed)
 				{
 					if (wParam == WM_SYSKEYDOWN)
 					{
+						// Alt+Tab while active in press-again mode: toggle dismiss
+						if (bAeroFlipActive && g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit)
+						{
+							g_bIsDismissing = !g_bIsDismissing;
+							return 1;
+						}
+
 						if (!g_bIsDismissing)
 						{
-							BOOL bSecondTab = FALSE;
 							if (!bAeroFlipActive)
 							{
 								TriggerAeroFlipActivation(hWnd);
+								if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab)
+								{
+									FlipWindow(bShiftPressed);
+								}
 							}
 							else
 							{
-								bSecondTab = TRUE;
-							}
-
-							if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab || bSecondTab)
-							{
-								FlipWindow();
+								FlipWindow(bShiftPressed);
 							}
 						}
 						return 1;
 					}
-
 					if (wParam == WM_SYSKEYUP)
 					{
 						return 1;
@@ -917,10 +1051,28 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 			// prevent keys from being sticky
 			if ((pKeyStruct->vkCode == VK_LMENU || pKeyStruct->vkCode == VK_RMENU || pKeyStruct->vkCode == VK_MENU))
 			{
-				if (bAeroFlipActive && (wParam == WM_KEYUP || wParam == WM_SYSKEYUP))
+				if (bAeroFlipActive)
 				{
-					g_bIsDismissing = TRUE;
-					return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+					if (g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit)
+					{
+						if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)
+						{
+							g_bIsDismissing = !g_bIsDismissing;
+							return 1;
+						}
+						if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
+						{
+							return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+						}
+					}
+					else
+					{
+						if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
+						{
+							g_bIsDismissing = TRUE;
+							return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+						}
+					}
 				}
 			}
 		}
@@ -1002,27 +1154,66 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 
 	FLOAT fLerpFactor = min(g_AeroFlipCfg.sConfig.iAnimationSpeed * fDeltaTime, 1.0f);
 
-	FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXSCREEN);
-	FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYSCREEN);
+	FLOAT vx = (FLOAT)GetSystemMetrics(SM_XVIRTUALSCREEN);
+	FLOAT vy = (FLOAT)GetSystemMetrics(SM_YVIRTUALSCREEN);
+	FLOAT Sw = (FLOAT)GetSystemMetrics(SM_CXVIRTUALSCREEN);
+	FLOAT Sh = (FLOAT)GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+	FLOAT mx = (FLOAT)g_miLastActiveMonitor.rcMonitor.left;
+	FLOAT my = (FLOAT)g_miLastActiveMonitor.rcMonitor.top;
+	FLOAT mcx = (FLOAT)g_miLastActiveMonitor.rcMonitor.right - g_miLastActiveMonitor.rcMonitor.left;
+	FLOAT mcy = (FLOAT)g_miLastActiveMonitor.rcMonitor.bottom - g_miLastActiveMonitor.rcMonitor.top;
+
 	FLOAT H_frust = 4.224978f;
 	FLOAT W_frust = H_frust * (Sw / Sh);
+
+	const FLOAT fRatioX = 1.0f / (Sw / mcx);
+	const FLOAT fRatioY = 1.0f / (Sh / mcy);
+
+	const FLOAT fVirtualCenterX = Sw / 2.0f;
+	const FLOAT fVirtualCenterY = Sh / 2.0f;
+
+	g_vMonitorShift[0] = (mx - vx + mcx * 0.5f - fVirtualCenterX) / mcx;
+	g_vMonitorShift[1] = -(my - vy + mcy * 0.5f - fVirtualCenterY) / mcy;
+
+	FLOAT fTargetDim = 1.0f;
+
+	const FLOAT fTargetBaseX = 1.0f;
+	const FLOAT fTargetBaseY = -0.7f;
+	const FLOAT fTargetBaseZ = 3.0f;
+
+	const FLOAT fTargetOffsetX = fRatioX * -g_AeroFlipCfg.sConfig.iHorizontalSpacingMM / 1000.0f;
+	const FLOAT fTargetOffsetY = fRatioY * g_AeroFlipCfg.sConfig.iVerticalSpacingMM / 1000.0f;
+	const FLOAT fTargetOffsetZ = 1.5f;
+
+	const FLOAT fBaseScale = 1.2f;
+
+	const BOOL bDismissToDesktop = g_bIsDismissing
+		&& g_uActiveIndex < (UINT)g_DrawObjects.size()
+		&& g_DrawObjects[g_uActiveIndex].bDesktopBg;
+
+	if (g_bIsDismissing)
+	{
+		fTargetDim = 0.0f;
+	}
+	else
+	{
+		fTargetDim = 1.0f;
+	}
+
 
 	for (INT i = 0; i < iNumWindows; ++i)
 	{
 		auto& window = g_DrawObjects[i];
 		INT iRelativeIndex = (i - (INT)g_uActiveIndex + iNumWindows) % iNumWindows;
 
-		const FLOAT fTargetBaseX = 1.0f;
-		const FLOAT fTargetBaseY = -0.7f;
-		const FLOAT fTargetBaseZ = 3.0f;
-
-		const FLOAT fTargetOffsetX = -g_AeroFlipCfg.sConfig.iHorizontalSpacingMM / 1000.0f;
-		const FLOAT fTargetOffsetY = g_AeroFlipCfg.sConfig.iVerticalSpacingMM / 1000.0f;
-		const FLOAT fTargetOffsetZ = 1.5f;
-
 		FLOAT fTargetX = fTargetBaseX + iRelativeIndex * fTargetOffsetX;
 		FLOAT fTargetY = fTargetBaseY + iRelativeIndex * fTargetOffsetY;
 		FLOAT fTargetZ = fTargetBaseZ + iRelativeIndex * fTargetOffsetZ;
+
+		//FLOAT fScaleRatio = min(fRatioX, fRatioY);
+		FLOAT fTargetScaleX = fRatioY * fBaseScale;
+		FLOAT fTargetScaleY = fRatioY * fBaseScale;
 
 		FLOAT fTargetRotY = -30.0f;
 		FLOAT fTargetOpacity = 1.0f;
@@ -1032,47 +1223,65 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 			fTargetOpacity = max(0.0f, 0.75f - 0.25f * (iRelativeIndex - uMaxShowWindows));
 		}
 
-		FLOAT fTargetScaleX = 1.2f;
-		FLOAT fTargetScaleY = 1.2f;
-
 		if (g_bIsDismissing)
 		{
-			FLOAT w = (FLOAT)(window.rcBounds.right - window.rcBounds.left);
-			if (w <= 0)
+			// If windows are minimised, fade out similar way
+			if (!window.bDesktopBg && (bDismissToDesktop || IsIconic(window.hTargetWnd) && (UINT)i != g_uActiveIndex))
 			{
-				w = 100.0f;
-			}
-			FLOAT h = (FLOAT)(window.rcBounds.bottom - window.rcBounds.top);
-			if (h <= 0)
-			{
-				h = 100.0f;
-			}
-			FLOAT cx = window.rcBounds.left + w / 2.0f;
-			FLOAT cy = window.rcBounds.top + h / 2.0f;
-
-			fTargetX = ((cx / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
-			fTargetY = (1.0f - (cy / Sh) * 2.0f) * (H_frust / 2.0f);
-			fTargetZ = 0.04f;
-			fTargetRotY = 0.0f;
-			fTargetOpacity = 1.0f;
-
-			FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
-			fTargetScaleX = matchScale;
-			fTargetScaleY = matchScale;
-
-			if (iRelativeIndex == 0)
-			{
+				fTargetX = window.fPosition[0];
+				fTargetY = window.fPosition[1];
+				fTargetZ = (iRelativeIndex == 0) ? 0.1f : window.fPosition[2];
+				fTargetRotY = window.fRotationY;
+				fTargetScaleX = window.fScale[0];
+				fTargetScaleY = window.fScale[1];
+				fTargetOpacity = 0.0f;
 			}
 			else
 			{
+				// RESTORE – normal window selected
+				// Animate every card back to its actual screen position.
+				FLOAT w = (FLOAT)(window.rcBounds.right - window.rcBounds.left);
+				if (w <= 0)
+				{
+					w = 100.0f;
+				}
+				FLOAT h = (FLOAT)(window.rcBounds.bottom - window.rcBounds.top);
+				if (h <= 0)
+				{
+					h = 100.0f;
+				}
+				FLOAT cx = window.rcBounds.left + w / 2.0f;
+				FLOAT cy = window.rcBounds.top + h / 2.0f;
+
+				fTargetX = (((cx - vx) / Sw) * 2.0f - 1.0f - g_vMonitorShift[0]) * (W_frust / 2.0f);
+				fTargetY = (1.0f - ((cy - vy) / Sh) * 2.0f - g_vMonitorShift[1]) * (H_frust / 2.0f);
+				fTargetZ = 0.1f;
+				fTargetRotY = 0.0f;
+				fTargetOpacity = 1.0f;
+
+				FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
+				fTargetScaleX = matchScale;
+				fTargetScaleY = matchScale;
+
+				// Fade out the desktop card and, when not showing the live
+				// desktop preview, fade out every non-selected card too.
 				if (!g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping)
+				{
+					if (iRelativeIndex != 0)
+					{
+						fTargetOpacity = 0.0f;
+					}
+				}
+				if (window.bDesktopBg)
 				{
 					fTargetOpacity = 0.0f;
 				}
 			}
+			window.iZOrder = iRelativeIndex;
 		}
 		else if (iRelativeIndex == (iNumWindows - 1) && g_bIsCycling)
 		{
+			// FLIPPED
 			if (window.dwMoveMode != aeroflip::eWDOMM_MOVING_TO_BACK)
 			{
 				window.dwMoveMode = aeroflip::eWDOMM_MOVING_TO_BACK;
@@ -1114,8 +1323,8 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		}
 		else
 		{
-			window.iZOrder = iRelativeIndex;
 		}
+		window.iZOrder = iRelativeIndex;
 
 		window.fPosition[0] += (fTargetX - window.fPosition[0]) * fLerpFactor;
 		window.fPosition[1] += (fTargetY - window.fPosition[1]) * fLerpFactor;
@@ -1126,6 +1335,8 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		window.fScale[0] += (fTargetScaleX - window.fScale[0]) * fLerpFactor;
 		window.fScale[1] += (fTargetScaleY - window.fScale[1]) * fLerpFactor;
 	}
+	g_fDesktopDimmingFactor += (fTargetDim - g_fDesktopDimmingFactor) * fLerpFactor;
+	g_fDesktopDimmingFactor = max(min(g_fDesktopDimmingFactor, 1.0f), 0.0f);
 }
 
 void InitializeWindowEventHook()

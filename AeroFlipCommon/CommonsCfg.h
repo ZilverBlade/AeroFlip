@@ -60,6 +60,7 @@ ReadIniCfg(kk, vv); } while (0)
 #define IniSection TEXT("KeyBind")
 			DefIniCfg(nMode, TEXT("CycleOnFirstTab"), &pCfg->kbConfig.bCycleOnFirstTab);
 			DefIniCfg(nMode, TEXT("ShiftToMoveBack"), &pCfg->kbConfig.bShiftToMoveBack);
+			DefIniCfg(nMode, TEXT("PressKeyAgainToExit"), &pCfg->kbConfig.bPressKeyAgainToExit);
 			DefIniCfg(nMode, TEXT("FlipShortcutMode"), &pCfg->kbConfig.dwFlipShortcutMode);
 #undef IniSection 
 		}
@@ -67,10 +68,11 @@ ReadIniCfg(kk, vv); } while (0)
 	{
 #define IniSection TEXT("Style")
 		DefIniCfg(nMode, TEXT("ShowDesktopWhenFlipping"), &pCfg->sConfig.bShowDesktopWhenFlipping);
-		DefIniCfg(nMode, TEXT("RenderWindowBorders"), &pCfg->sConfig.bRenderWindowBorders);
+		DefIniCfg(nMode, TEXT("DesktopDimmingPercent"), &pCfg->sConfig.uDesktopDimmingPercent);
 		DefIniCfg(nMode, TEXT("MaxWindowsVisible"), &pCfg->sConfig.uMaxWindowsVisible);
 		DefIniCfg(nMode, TEXT("HorizontalSpacingMM"), &pCfg->sConfig.iHorizontalSpacingMM);
 		DefIniCfg(nMode, TEXT("VerticalSpacingMM"), &pCfg->sConfig.iVerticalSpacingMM);
+		DefIniCfg(nMode, TEXT("WindowFrameStyle"), &pCfg->sConfig.dwWindowFrameStyle);
 		DefIniCfg(nMode, TEXT("AnimationSpeed"), &pCfg->sConfig.iAnimationSpeed);
 #undef IniSection 
 	}
