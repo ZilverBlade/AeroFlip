@@ -2,6 +2,24 @@
 ; AeroFlip Installer Script
 ; ---------------------------------------------------------
 
+!include "MUI2.nsh"
+
+!define MUI_PAGE_LICENSE "../LICENSE" 
+
+!insertmacro MUI_PAGE_LICENSE "${MUI_PAGE_LICENSE}"
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+
+!define MUI_FINISHPAGE_RUN "$INSTDIR\AeroFlipConfigurator.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "Launch Configurator"
+!insertmacro MUI_PAGE_FINISH
+
+; Uninstaller Pages
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
+!insertmacro MUI_LANGUAGE "English"
+
 !include "x64.nsh"
 
 !define APPNAME "AeroFlip"
@@ -28,9 +46,6 @@ FunctionEnd
 InstallDir "C:\Program Files\${APPNAME}"
 
 RequestExecutionLevel admin
-
-Page directory
-Page instfiles
 
 ; ---------------------------------------------------------
 ; Main Installation Section
@@ -68,6 +83,8 @@ Section "Install"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "${APPNAME}" '"$INSTDIR\AeroFlip.exe"'
 
     ExecShell "open" "$INSTDIR\AeroFlip.exe" "" SW_SHOWNORMAL
+
+
 SectionEnd
 
 ; ---------------------------------------------------------

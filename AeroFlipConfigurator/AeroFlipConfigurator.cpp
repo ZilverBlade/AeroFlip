@@ -512,38 +512,11 @@ void OnBtnApply(const SWndEvent* pEvent)
 		g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping =
 			(SendDlgItemMessage(pEvent->hDlg, IDC_SHOW_DESKTOP, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-		{
-			TCHAR buf[8];
-			ZeroMemory(&buf, sizeof(buf));
-			*(WORD*)buf = 6;
-
-			SendDlgItemMessage(pEvent->hDlg, IDC_MAX_WINDOWS_VISIBLE, EM_GETLINE, 0, (LPARAM)buf);
-			g_AeroFlipCfg.sConfig.uMaxWindowsVisible = max((UINT)_tstoi(buf), 1); // at least 1 window!
-		}
-		{
-			TCHAR buf[8];
-			ZeroMemory(&buf, sizeof(buf));
-			*(WORD*)buf = 6;
-
-			SendDlgItemMessage(pEvent->hDlg, IDC_DESKTOP_DIMMING_PERC, EM_GETLINE, 0, (LPARAM)buf);
-			g_AeroFlipCfg.sConfig.uDesktopDimmingPercent = max((UINT)_tstoi(buf), 1); // at least 1 window!
-		}
-		{
-			TCHAR buf[8];
-			ZeroMemory(&buf, sizeof(buf));
-			*(WORD*)buf = 6;
-
-			SendDlgItemMessage(pEvent->hDlg, IDC_HORIZONTAL_SPACING, EM_GETLINE, 0, (LPARAM)buf);
-			g_AeroFlipCfg.sConfig.iHorizontalSpacingMM = _tstoi(buf);
-		}
-		{
-			TCHAR buf[8];
-			ZeroMemory(&buf, sizeof(buf));
-			*(WORD*)buf = 6;
-
-			SendDlgItemMessage(pEvent->hDlg, IDC_VERTICAL_SPACING, EM_GETLINE, 0, (LPARAM)buf);
-			g_AeroFlipCfg.sConfig.iVerticalSpacingMM = _tstoi(buf);
-		}
+		g_AeroFlipCfg.sConfig.uDesktopDimmingPercent = GetDlgItemInt(pEvent->hDlg, IDC_DESKTOP_DIMMING_PERC, NULL, FALSE);
+		g_AeroFlipCfg.sConfig.uMaxWindowsVisible = GetDlgItemInt(pEvent->hDlg, IDC_MAX_WINDOWS_VISIBLE, NULL, FALSE);
+		g_AeroFlipCfg.sConfig.uMaxWindowsVisible = max(g_AeroFlipCfg.sConfig.uMaxWindowsVisible, 1);
+		g_AeroFlipCfg.sConfig.iHorizontalSpacingMM = (INT)GetDlgItemInt(pEvent->hDlg, IDC_HORIZONTAL_SPACING, NULL, TRUE);
+		g_AeroFlipCfg.sConfig.iVerticalSpacingMM = (INT)GetDlgItemInt(pEvent->hDlg, IDC_VERTICAL_SPACING, NULL, TRUE);
 
 		g_AeroFlipCfg.rConfig.bHardwareAcceleration =
 			(SendDlgItemMessage(pEvent->hDlg, IDC_HARDWARE_ACCELERATION, BM_GETCHECK, 0, 0) == BST_CHECKED);

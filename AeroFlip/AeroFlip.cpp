@@ -810,11 +810,10 @@ void CALLBACK WinEventProc(
 	}
 }
 
-void FlipWindow()
+void FlipWindow(BOOL bShiftPressed)
 {
 	if (!g_DrawObjects.empty())
 	{
-		bool bShiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 		if (bShiftPressed && g_AeroFlipCfg.kbConfig.bShiftToMoveBack)
 		{
 			g_uActiveIndex = (g_uActiveIndex + g_DrawObjects.size() - 1) % (UINT)g_DrawObjects.size();
@@ -830,11 +829,15 @@ void FlipWindow()
 void TriggerAeroFlipActivation(HWND hWnd)
 {
 	g_bWindowListDirty = TRUE;
-	g_hLastActiveWindow = GetForegroundWindow();
-
-	if (g_hLastActiveWindow != hWnd)
+	if (!IsWindowVisible(hWnd))
 	{
-		g_pWindowProvider->FlagActiveWindow(g_hLastActiveWindow);
+		HWND hFgWnd = GetForegroundWindow();
+
+		if (hFgWnd != hWnd)
+		{
+			g_pWindowProvider->FlagActiveWindow(hFgWnd);
+			g_hLastActiveWindow = hFgWnd;
+		}
 	}
 
 	UINT cWindows = 0;
@@ -888,12 +891,13 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 		if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_WIN_TAB)
 		{
 			BOOL bWinDown = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
+			BOOL bShiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 
 			if ((g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit || bWinDown) && pKeyStruct->vkCode == VK_TAB && bAeroFlipActive)
 			{
 				if (wParam == WM_KEYDOWN)
 				{
-					FlipWindow();
+					FlipWindow(bShiftPressed);
 				}
 				return 1; // Suppress built-in system task cycling
 			}
@@ -911,7 +915,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 
 					if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab)
 					{
-						FlipWindow();
+						FlipWindow(bShiftPressed);
 					}
 				}
 				return 1;
@@ -919,18 +923,17 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 
 			if (pKeyStruct->vkCode == VK_TAB && bWinDown && bAeroFlipActive)
 			{
-				if (wParam == WM_KEYDOWN)
+				if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)
 				{
 					INPUT input = { 0 };
 					input.type = INPUT_KEYBOARD;
 					input.ki.wVk = VK_NONAME;
 					SendInput(1, &input, sizeof(INPUT));
 
-					FlipWindow();
+					FlipWindow(bShiftPressed);
 				}
 				return 1;
 			}
-
 			if (g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit)
 			{
 				// Trap Windows keys to dismiss if window is open
@@ -963,18 +966,35 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 					}
 				}
 			}
+
+			if (pKeyStruct->vkCode == VK_LSHIFT || pKeyStruct->vkCode == VK_RSHIFT || pKeyStruct->vkCode == VK_SHIFT)
+			{
+				if (bAeroFlipActive && bWinDown)
+				{
+					if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
+					{
+						INPUT input = { 0 };
+						input.type = INPUT_KEYBOARD;
+						input.ki.wVk = VK_NONAME;
+						SendInput(1, &input, sizeof(INPUT));
+						return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+					}
+					return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+				}
+			}
 		}
 		else if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_ALT_TAB)
 		{
 			if (pKeyStruct->vkCode == VK_TAB)
 			{
 				BOOL bAltPressed = (pKeyStruct->flags & LLKHF_ALTDOWN) != 0;
+				BOOL bShiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 
 				if (!bAltPressed && bAeroFlipActive && g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit)
 				{
 					if (wParam == WM_KEYDOWN)
 					{
-						FlipWindow();
+						FlipWindow(bShiftPressed);
 					}
 					return 1;
 				}
@@ -997,12 +1017,12 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 								TriggerAeroFlipActivation(hWnd);
 								if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab)
 								{
-									FlipWindow();
+									FlipWindow(bShiftPressed);
 								}
 							}
 							else
 							{
-								FlipWindow();
+								FlipWindow(bShiftPressed);
 							}
 						}
 						return 1;
@@ -1192,7 +1212,7 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		if (g_bIsDismissing)
 		{
 			// If windows are minimised, fade out similar way
-			if (!window.bDesktopBg && (bDismissToDesktop || IsIconic(window.hTargetWnd) && window.bFocused))
+			if (!window.bDesktopBg && (bDismissToDesktop || IsIconic(window.hTargetWnd) && (UINT)i != g_uActiveIndex))
 			{
 				fTargetX = window.fPosition[0];
 				fTargetY = window.fPosition[1];
@@ -1289,8 +1309,8 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		}
 		else
 		{
-			window.iZOrder = iRelativeIndex;
 		}
+		window.iZOrder = iRelativeIndex;
 
 		window.fPosition[0] += (fTargetX - window.fPosition[0]) * fLerpFactor;
 		window.fPosition[1] += (fTargetY - window.fPosition[1]) * fLerpFactor;
