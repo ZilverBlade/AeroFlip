@@ -10,14 +10,24 @@ AeroFlip automatically starts up after the install process, and launches itself 
 
 There is a configuration programme (called _AeroFlip Configurator_), which can be found through the start menu, or in the task bar as a notification tray.
 
-<img width="73" height="81" alt="image" src="https://github.com/user-attachments/assets/ba043cc0-9eab-4d4d-832a-0ed2564c44cc" />
+![AeroFlip Tray Icon](screenshots/trayicon.jpg "AeroFlip Tray Icon")
+
+### Usage
+
+By default, the Windows Vista behaviour is replicated. Win+Tab is the default flip mode. Press Win+Tab and hold Win to be in flip mode, and press Tab or Shift+Tab to cycle forwards/backwards respectively.
+
+Classic windows 7 window frames are enabled by default, but can be disabled. Support for native window frames is still WIP.
+
+Desktop dimming, and desktop peeking can be configured. By default, the desktop background is displayed and 40% dimmed.
 
 
 # SCREENSHOTS
 
-![AeroFlip Desktop Example, Activated With Alt Tab](screenshots/preview.jpg "AeroFlip Activated")
+![AeroFlip Desktop Example](screenshots/preview.jpg "AeroFlip Activated")
 
 _(Running on Windows 10, using other styling tools such as [RetroBar](https://github.com/dremin/Retrobar) and [DWMBlurGlass](https://github.com/Maplespe/DWMBlurGlass), these libraries are NOT included!)_
+
+![AeroFlip Multi Monitor Desktop Example](screenshots/preview.jpg "AeroFlip Activated, with dimming and multi monitor setup")
 
 ![AeroFlip Config Screenshot](screenshots/config.jpg "AeroFlip Configurator")
 
@@ -25,7 +35,7 @@ _(AeroFlip Configurator, screenshot from v1.2-beta)_
 
 ### Known bugs:
 
-* When using multiple monitors, the flip mode stays on the primary monitor.
+* _No breaking bugs known as of now._
 
 # Implementation
 
