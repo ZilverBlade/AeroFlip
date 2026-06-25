@@ -380,7 +380,8 @@ namespace aeroflip
 		ResetD3D9ExDevice();
 	}
 
-	void CD3D9ExRendererApi::OnRender(const SWindowDrawObject* pWindows, UINT cWindows, BOOL bRenderDesktopFullScreen, const FLOAT* pvCameraOrigin)
+	void CD3D9ExRendererApi::OnRender(const SWindowDrawObject* pWindows, UINT cWindows, 
+		BOOL bRenderDesktopFullScreen, const FLOAT* pvCameraOrigin, const FLOAT* pvMonitorShift)
 	{
 		if (!m_pD3D9ExDevice) return;
 
@@ -485,6 +486,24 @@ namespace aeroflip
 				}
 			}
 			{
+				D3DMATRIX matProj;
+				m_pD3D9ExDevice->GetTransform(D3DTS_PROJECTION, &matProj);
+
+				FLOAT fShiftX = pvMonitorShift[0];
+				FLOAT fShiftY = pvMonitorShift[1];
+
+				D3DMATRIX matShift = {
+					1.0f, 0.0f, 0.0f, 0.0f,
+					0.0f, 1.0f, 0.0f, 0.0f,
+					0.0f, 0.0f, 1.0f, 0.0f,
+					fShiftX, fShiftY, 0.0f, 1.0f
+				};
+
+				D3DMATRIX matFinalProj;
+				D3DXMatrixMultiply((D3DXMATRIX*)&matFinalProj, (D3DXMATRIX*)&matProj, (D3DXMATRIX*)&matShift);
+
+				m_pD3D9ExDevice->SetTransform(D3DTS_PROJECTION, &matFinalProj);
+
 				D3DXVECTOR3 origin(pvCameraOrigin[0], pvCameraOrigin[1], pvCameraOrigin[2]);
 				D3DXVECTOR3 target(pvCameraOrigin[0], pvCameraOrigin[1], 0.0f);
 				D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);

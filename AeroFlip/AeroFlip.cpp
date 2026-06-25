@@ -63,9 +63,10 @@ BOOL g_bIsCycling = FALSE;								// Tracks if alt+tab cycle is happening now
 UINT g_uActiveIndex = 0;								// Tracks which window index is front and center
 HWND g_hLastActiveWindow = NULL;						// Tracks which window was active right before AeroFlip
 MONITORINFO g_miLastActiveMonitor;
-float g_vCameraOrigin[3] = { 0 };
+FLOAT g_vCameraOrigin[3] = { 0 };
+FLOAT g_vMonitorShift[2] = { 0 };
 LARGE_INTEGER g_liLastTime = { 0 };						// Stores the previous frame timestamp
-double g_dFreq = 0.0;									// QPC Clock Frequency scalar
+DOUBLE g_dFreq = 0.0;									// QPC Clock Frequency scalar
 std::vector<aeroflip::SWindowDrawObject> g_DrawObjects;
 
 // Forward declarations of functions included in this code module:
@@ -273,7 +274,7 @@ int APIENTRY _tWinMain(
 						});
 
 						g_pRenderer->OnRender(draws.data(), (UINT)draws.size(),
-							g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping, g_vCameraOrigin);
+							g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping, g_vCameraOrigin, g_vMonitorShift);
 					}
 				}
 				else
@@ -1046,26 +1047,21 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 	FLOAT H_frust = 4.224978f;
 	FLOAT W_frust = H_frust * (Sw / Sh);
 
-	FLOAT fMonitorCornerX = (mx - vx);
-	FLOAT fMonitorCornerY = (my - vy);
-
-	FLOAT fMonitorCenterX = fMonitorCornerX + (mcx * 0.5f);
-	FLOAT fMonitorCenterY = fMonitorCornerY + (mcy * 0.5f);
-
 	const FLOAT fRatioX = 1.0f / (Sw / mcx);
 	const FLOAT fRatioY = 1.0f / (Sh / mcy);
 
-	//const FLOAT fBaseOffsetCornerX = (fMonitorCornerX / Sw);
-	//const FLOAT fBaseOffsetCornerY = (fMonitorCornerY / Sh);
-	const FLOAT fBaseOffsetCenterX = (fMonitorCenterX / Sw) - 0.5f * W_frust;
-	const FLOAT fBaseOffsetCenterY = 0.5f - (fMonitorCenterY / Sh) * H_frust;
+	const FLOAT fVirtualCenterX = Sw / 2.0f;
+	const FLOAT fVirtualCenterY = Sh / 2.0f;
 
-	g_vCameraOrigin[0] = fBaseOffsetCenterX;
-	g_vCameraOrigin[1] = fBaseOffsetCenterY;
+	g_vMonitorShift[0] = (mx - vx + mcx * 0.5f - fVirtualCenterX) / mcx;
+	g_vMonitorShift[1] = -(my - vy + mcy * 0.5f - fVirtualCenterY) / mcy;
+
+	g_vCameraOrigin[0] = 0.0f;
+	g_vCameraOrigin[1] = 0.0f;
 	g_vCameraOrigin[2] = -5.0f;
 
-	const FLOAT fTargetBaseX = 1.0f + fBaseOffsetCenterX;
-	const FLOAT fTargetBaseY = -0.7f + fBaseOffsetCenterY;
+	const FLOAT fTargetBaseX = 1.0f;
+	const FLOAT fTargetBaseY = -0.7f;
 	const FLOAT fTargetBaseZ = 3.0f;
 
 	const FLOAT fTargetOffsetX = fRatioX * -g_AeroFlipCfg.sConfig.iHorizontalSpacingMM / 1000.0f;
@@ -1087,7 +1083,8 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		FLOAT fTargetY = fTargetBaseY + iRelativeIndex * fTargetOffsetY;
 		FLOAT fTargetZ = fTargetBaseZ + iRelativeIndex * fTargetOffsetZ;
 
-		FLOAT fTargetScaleX = fRatioX * fBaseScale;
+		//FLOAT fScaleRatio = min(fRatioX, fRatioY);
+		FLOAT fTargetScaleX = fRatioY * fBaseScale;
 		FLOAT fTargetScaleY = fRatioY * fBaseScale;
 
 		FLOAT fTargetRotY = -30.0f;
@@ -1100,7 +1097,8 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 
 		if (g_bIsDismissing)
 		{
-			if (bDismissToDesktop)
+			// If windows are minimised, fade out similar way
+			if (bDismissToDesktop || IsIconic(window.hTargetWnd) && window.bFocused)
 			{
 				fTargetX = window.fPosition[0];
 				fTargetY = window.fPosition[1];
@@ -1127,8 +1125,8 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 				FLOAT cx = window.rcBounds.left + w / 2.0f;
 				FLOAT cy = window.rcBounds.top + h / 2.0f;
 
-				fTargetX = fBaseOffsetCenterX + (((cx - vx) / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
-				fTargetY = fBaseOffsetCenterY + (1.0f - ((cy - vy) / Sh) * 2.0f) * (H_frust / 2.0f);
+				fTargetX = (((cx - vx) / Sw) * 2.0f - 1.0f - g_vMonitorShift[0]) * (W_frust / 2.0f);
+				fTargetY = (1.0f - ((cy - vy) / Sh) * 2.0f - g_vMonitorShift[1]) * (H_frust / 2.0f);
 				fTargetZ = 0.1f;
 				fTargetRotY = 0.0f;
 				fTargetOpacity = 1.0f;
