@@ -175,16 +175,25 @@ int APIENTRY _tWinMain(
 				{
 					BOOL bDismissTriggered = FALSE;
 
-					if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_WIN_TAB)
+					if (g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit)
 					{
-						// In Win+Tab mode, dismissal is handled directly in LowLevelKeyboardProc asynchronously
+						// In press again mode, dismissal is handled directly in LowLevelKeyboardProc asynchronously
 						bDismissTriggered = g_bIsDismissing;
 					}
 					else
 					{
-						BOOL bAltHeld = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+						BOOL bKeyHeld = FALSE;
+						if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_ALT_TAB)
+						{
+							bKeyHeld = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+						}
+						else if (g_AeroFlipCfg.kbConfig.dwFlipShortcutMode == aeroflip::eFSM_WIN_TAB)
+						{
+							bKeyHeld = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
+								(GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
+						}
 
-						if (!bAltHeld)
+						if (!bKeyHeld)
 						{
 							if (!g_bIsDismissing)
 							{
@@ -277,7 +286,7 @@ int APIENTRY _tWinMain(
 						{
 							return a.iZOrder < b.iZOrder;
 						});
-						
+
 						FLOAT fBgOpacity = g_fDesktopDimmingFactor * g_AeroFlipCfg.sConfig.uDesktopDimmingPercent / 100.0f;
 						if (g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping)
 						{
@@ -880,7 +889,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 		{
 			BOOL bWinDown = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
 
-			if (pKeyStruct->vkCode == VK_TAB && bAeroFlipActive)
+			if ((g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit || bWinDown) && pKeyStruct->vkCode == VK_TAB && bAeroFlipActive)
 			{
 				if (wParam == WM_KEYDOWN)
 				{
@@ -908,20 +917,49 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 				return 1;
 			}
 
-			// Trap Windows keys to dismiss if window is open
-			if (pKeyStruct->vkCode == VK_LWIN || pKeyStruct->vkCode == VK_RWIN)
+			if (pKeyStruct->vkCode == VK_TAB && bWinDown && bAeroFlipActive)
 			{
-				if (bAeroFlipActive)
+				if (wParam == WM_KEYDOWN)
 				{
-					if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
-					{
-						return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
-					}
+					INPUT input = { 0 };
+					input.type = INPUT_KEYBOARD;
+					input.ki.wVk = VK_NONAME;
+					SendInput(1, &input, sizeof(INPUT));
 
-					if (wParam == WM_KEYDOWN)
+					FlipWindow();
+				}
+				return 1;
+			}
+
+			if (g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit)
+			{
+				// Trap Windows keys to dismiss if window is open
+				if (pKeyStruct->vkCode == VK_LWIN || pKeyStruct->vkCode == VK_RWIN)
+				{
+					if (bAeroFlipActive)
 					{
-						g_bIsDismissing = !g_bIsDismissing;
-						return 1;
+						if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
+						{
+							return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+						}
+
+						if (wParam == WM_KEYDOWN)
+						{
+							g_bIsDismissing = !g_bIsDismissing;
+							return 1;
+						}
+					}
+				}
+			}
+			else
+			{
+				// prevent keys from being sticky
+				if ((pKeyStruct->vkCode == VK_LWIN || pKeyStruct->vkCode == VK_RWIN))
+				{
+					if (bAeroFlipActive && (wParam == WM_KEYUP || wParam == WM_SYSKEYUP))
+					{
+						g_bIsDismissing = TRUE;
+						return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
 					}
 				}
 			}
@@ -1122,7 +1160,7 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		if (g_bIsDismissing)
 		{
 			// If windows are minimised, fade out similar way
-			if (bDismissToDesktop || IsIconic(window.hTargetWnd) && window.bFocused)
+			if (!window.bDesktopBg && (bDismissToDesktop || IsIconic(window.hTargetWnd) && window.bFocused))
 			{
 				fTargetX = window.fPosition[0];
 				fTargetY = window.fPosition[1];
@@ -1161,11 +1199,12 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 
 				// Fade out the desktop card and, when not showing the live
 				// desktop preview, fade out every non-selected card too.
-				if (iRelativeIndex != 0 && (window.bDesktopBg || !g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping))
+				if (iRelativeIndex != 0 || window.bDesktopBg || !g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping)
 				{
 					fTargetOpacity = 0.0f;
 				}
 			}
+			window.iZOrder = iRelativeIndex;
 		}
 		else if (iRelativeIndex == (iNumWindows - 1) && g_bIsCycling)
 		{

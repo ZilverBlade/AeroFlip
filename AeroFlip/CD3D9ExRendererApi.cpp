@@ -440,10 +440,6 @@ namespace aeroflip
 			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE));
 			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_TFACTOR));
 
-			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE));
-			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE));
-			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_TFACTOR));
-
 			FLOAT Sw = static_cast<FLOAT>(GetSystemMetrics(SM_CXVIRTUALSCREEN));
 			FLOAT Sh = static_cast<FLOAT>(GetSystemMetrics(SM_CYVIRTUALSCREEN));
 			D3DXMATRIX matProj, matView;
@@ -490,11 +486,17 @@ namespace aeroflip
 						fvTint[0] = fDesktopOpacityFactor;
 						fvTint[1] = fDesktopOpacityFactor;
 						fvTint[2] = fDesktopOpacityFactor;
+
+						DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE));
+						DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE));
+						DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_TFACTOR));
 						RenderDrawObject(&wdoBackground, fvTint);
 						break;
 					}
 				}
 			}
+
+			DEVICE_CALL(m_pD3D9ExDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1));
 			{
 				D3DMATRIX matProj;
 				m_pD3D9ExDevice->GetTransform(D3DTS_PROJECTION, &matProj);
