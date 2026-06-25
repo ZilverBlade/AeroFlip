@@ -10,6 +10,7 @@ namespace aeroflip
 	{
 		BOOL bShiftToMoveBack;
 		BOOL bCycleOnFirstTab;
+		BOOL bPressKeyAgainToExit;
 
 		DWORD dwFlipShortcutMode;
 
@@ -17,6 +18,7 @@ namespace aeroflip
 		{
 			bShiftToMoveBack = TRUE;
 			bCycleOnFirstTab = FALSE;
+			bPressKeyAgainToExit = FALSE;
 			dwFlipShortcutMode = eFSM_WIN_TAB;
 		}
 	};

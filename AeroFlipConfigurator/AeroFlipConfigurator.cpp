@@ -47,6 +47,7 @@ void				OnCbnRendererModeSelect(const SWndEvent* pEvent, int nSelection);
 void				OnCbnMsaaQualitySelect(const SWndEvent* pEvent, int nSelection);
 void				OnCbnTextureQualitySelect(const SWndEvent* pEvent, int nSelection);
 void				OnCbnShortcutSelect(const SWndEvent* pEvent, int nSelection);
+void				OnCbnWindFrameStyleSelect(const SWndEvent* pEvent, int nSelection);
 void				OnCbnAnimSpeedSelect(const SWndEvent* pEvent, int nSelection);
 
 DWORD GetProcessIdByName(LPCTSTR lpszProcessName)
@@ -254,10 +255,15 @@ INT_PTR CALLBACK MasterDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 		SendDlgItemMessage(hDlg, IDC_SHORTCUT_MODE, CB_ADDSTRING, 0, (LPARAM)_T("Alt+Tab"));
 		SendDlgItemMessage(hDlg, IDC_SHORTCUT_MODE, CB_ADDSTRING, 0, (LPARAM)_T("Win+Tab"));
 
+		SendDlgItemMessage(hDlg, IDC_WINDOW_FRAME_STYLE, CB_ADDSTRING, 0, (LPARAM)_T("None"));
+		SendDlgItemMessage(hDlg, IDC_WINDOW_FRAME_STYLE, CB_ADDSTRING, 0, (LPARAM)_T("<NOT IMPLEMENTED>"));
+		SendDlgItemMessage(hDlg, IDC_WINDOW_FRAME_STYLE, CB_ADDSTRING, 0, (LPARAM)_T("Windows Aero"));
+
 		SendDlgItemMessage(hDlg, IDC_ANIM_SPEED, CB_ADDSTRING, 0, (LPARAM)_T("Slow"));
 		SendDlgItemMessage(hDlg, IDC_ANIM_SPEED, CB_ADDSTRING, 0, (LPARAM)_T("Normal"));
 		SendDlgItemMessage(hDlg, IDC_ANIM_SPEED, CB_ADDSTRING, 0, (LPARAM)_T("Fast"));
 
+		SendDlgItemMessage(hDlg, IDC_DESKTOP_DIMMING_PERC, EM_SETLIMITTEXT, 3, 0);
 		SendDlgItemMessage(hDlg, IDC_MAX_WINDOWS_VISIBLE, EM_SETLIMITTEXT, 1, 0);
 		SendDlgItemMessage(hDlg, IDC_HORIZONTAL_SPACING, EM_SETLIMITTEXT, 4, 0);
 		SendDlgItemMessage(hDlg, IDC_VERTICAL_SPACING, EM_SETLIMITTEXT, 4, 0);
@@ -292,6 +298,9 @@ INT_PTR CALLBACK MasterDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 				return (INT_PTR)TRUE;
 			case IDC_SHORTCUT_MODE:
 				OnCbnShortcutSelect(&event, sel);
+				return (INT_PTR)TRUE;
+			case IDC_WINDOW_FRAME_STYLE:
+				OnCbnWindFrameStyleSelect(&event, sel);
 				return (INT_PTR)TRUE;
 			case IDC_ANIM_SPEED:
 				OnCbnAnimSpeedSelect(&event, sel);
@@ -393,14 +402,28 @@ void SynchronizeDialog(HWND hDlg)
 	// Style
 	{
 		SendDlgItemMessage(hDlg, IDC_SHOW_DESKTOP, BM_SETCHECK, g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping ? 1 : 0, 0);
-		SendDlgItemMessage(hDlg, IDC_RENDER_WINDOW_BORDERS, BM_SETCHECK, g_AeroFlipCfg.sConfig.bRenderWindowBorders ? 1 : 0, 0);
 
+		SendDlgItemMessage(hDlg, IDC_DESKTOP_DIMMING_PERC, EM_REPLACESEL, 0,
+			(LPARAM)(std::to_wstring(g_AeroFlipCfg.sConfig.uDesktopDimmingPercent).c_str()));
 		SendDlgItemMessage(hDlg, IDC_MAX_WINDOWS_VISIBLE, EM_REPLACESEL, 0,
 			(LPARAM)(std::to_wstring(g_AeroFlipCfg.sConfig.uMaxWindowsVisible).c_str()));
 		SendDlgItemMessage(hDlg, IDC_HORIZONTAL_SPACING, EM_REPLACESEL, 0,
 			(LPARAM)(std::to_wstring(g_AeroFlipCfg.sConfig.iHorizontalSpacingMM).c_str()));
 		SendDlgItemMessage(hDlg, IDC_VERTICAL_SPACING, EM_REPLACESEL, 0,
 			(LPARAM)(std::to_wstring(g_AeroFlipCfg.sConfig.iVerticalSpacingMM).c_str()));
+
+		switch (g_AeroFlipCfg.sConfig.dwWindowFrameStyle)
+		{
+		case aeroflip::eWFS_NONE:
+			SendDlgItemMessage(hDlg, IDC_WINDOW_FRAME_STYLE, CB_SETCURSEL, 0, 0);
+			break;
+		case aeroflip::eWFS_NATIVE:
+			SendDlgItemMessage(hDlg, IDC_WINDOW_FRAME_STYLE, CB_SETCURSEL, 1, 0);
+			break;
+		case aeroflip::eWFS_WINDOWS_AERO:
+			SendDlgItemMessage(hDlg, IDC_WINDOW_FRAME_STYLE, CB_SETCURSEL, 2, 0);
+			break;
+		}
 
 		switch (g_AeroFlipCfg.sConfig.iAnimationSpeed)
 		{
@@ -482,12 +505,9 @@ void OnBtnApply(const SWndEvent* pEvent)
 		g_AeroFlipCfg.kbConfig.bShiftToMoveBack =
 			(SendDlgItemMessage(pEvent->hDlg, IDC_SHIFT_TO_MOVE_BACK, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-		g_AeroFlipCfg.sConfig.bRenderWindowBorders =
-			(SendDlgItemMessage(pEvent->hDlg, IDC_RENDER_WINDOW_BORDERS, BM_GETCHECK, 0, 0) == BST_CHECKED);
+		g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit =
+			(SendDlgItemMessage(pEvent->hDlg, IDC_PRESS_AGAIN_TO_EXIT, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-
-		g_AeroFlipCfg.sConfig.bRenderWindowBorders =
-			(SendDlgItemMessage(pEvent->hDlg, IDC_RENDER_WINDOW_BORDERS, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
 		g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping =
 			(SendDlgItemMessage(pEvent->hDlg, IDC_SHOW_DESKTOP, BM_GETCHECK, 0, 0) == BST_CHECKED);
@@ -496,9 +516,17 @@ void OnBtnApply(const SWndEvent* pEvent)
 			TCHAR buf[8];
 			ZeroMemory(&buf, sizeof(buf));
 			*(WORD*)buf = 6;
-			
+
 			SendDlgItemMessage(pEvent->hDlg, IDC_MAX_WINDOWS_VISIBLE, EM_GETLINE, 0, (LPARAM)buf);
 			g_AeroFlipCfg.sConfig.uMaxWindowsVisible = max((UINT)_tstoi(buf), 1); // at least 1 window!
+		}
+		{
+			TCHAR buf[8];
+			ZeroMemory(&buf, sizeof(buf));
+			*(WORD*)buf = 6;
+
+			SendDlgItemMessage(pEvent->hDlg, IDC_DESKTOP_DIMMING_PERC, EM_GETLINE, 0, (LPARAM)buf);
+			g_AeroFlipCfg.sConfig.uDesktopDimmingPercent = max((UINT)_tstoi(buf), 1); // at least 1 window!
 		}
 		{
 			TCHAR buf[8];
@@ -603,6 +631,23 @@ void OnCbnShortcutSelect(const SWndEvent* pEvent, int nSelection)
 		break;
 	case 1:
 		g_AeroFlipCfg.kbConfig.dwFlipShortcutMode = aeroflip::eFSM_WIN_TAB;
+		break;
+	}
+}
+
+void OnCbnWindFrameStyleSelect(const SWndEvent* pEvent, int nSelection)
+{
+	UNREFERENCED_PARAMETER(pEvent);
+	switch (nSelection)
+	{
+	case 0:
+		g_AeroFlipCfg.sConfig.dwWindowFrameStyle = aeroflip::eWFS_NONE;
+		break;
+	case 1:
+		g_AeroFlipCfg.sConfig.dwWindowFrameStyle = aeroflip::eWFS_NATIVE;
+		break;
+	case 2:
+		g_AeroFlipCfg.sConfig.dwWindowFrameStyle = aeroflip::eWFS_WINDOWS_AERO;
 		break;
 	}
 }
