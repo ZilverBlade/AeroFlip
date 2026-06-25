@@ -969,30 +969,44 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 			if (pKeyStruct->vkCode == VK_TAB)
 			{
 				BOOL bAltPressed = (pKeyStruct->flags & LLKHF_ALTDOWN) != 0;
+
+				if (!bAltPressed && bAeroFlipActive && g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit)
+				{
+					if (wParam == WM_KEYDOWN)
+					{
+						FlipWindow();
+					}
+					return 1;
+				}
+
 				if (bAltPressed)
 				{
 					if (wParam == WM_SYSKEYDOWN)
 					{
+						// Alt+Tab while active in press-again mode: toggle dismiss
+						if (bAeroFlipActive && g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit)
+						{
+							g_bIsDismissing = !g_bIsDismissing;
+							return 1;
+						}
+
 						if (!g_bIsDismissing)
 						{
-							BOOL bSecondTab = FALSE;
 							if (!bAeroFlipActive)
 							{
 								TriggerAeroFlipActivation(hWnd);
+								if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab)
+								{
+									FlipWindow();
+								}
 							}
 							else
-							{
-								bSecondTab = TRUE;
-							}
-
-							if (g_AeroFlipCfg.kbConfig.bCycleOnFirstTab || bSecondTab)
 							{
 								FlipWindow();
 							}
 						}
 						return 1;
 					}
-
 					if (wParam == WM_SYSKEYUP)
 					{
 						return 1;
@@ -1003,10 +1017,28 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 			// prevent keys from being sticky
 			if ((pKeyStruct->vkCode == VK_LMENU || pKeyStruct->vkCode == VK_RMENU || pKeyStruct->vkCode == VK_MENU))
 			{
-				if (bAeroFlipActive && (wParam == WM_KEYUP || wParam == WM_SYSKEYUP))
+				if (bAeroFlipActive)
 				{
-					g_bIsDismissing = TRUE;
-					return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+					if (g_AeroFlipCfg.kbConfig.bPressKeyAgainToExit)
+					{
+						if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)
+						{
+							g_bIsDismissing = !g_bIsDismissing;
+							return 1;
+						}
+						if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
+						{
+							return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+						}
+					}
+					else
+					{
+						if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
+						{
+							g_bIsDismissing = TRUE;
+							return CallNextHookEx(g_hKeyboardHook, nCode, wParam, lParam);
+						}
+					}
 				}
 			}
 		}
@@ -1199,7 +1231,14 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 
 				// Fade out the desktop card and, when not showing the live
 				// desktop preview, fade out every non-selected card too.
-				if (iRelativeIndex != 0 || window.bDesktopBg || !g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping)
+				if (!g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping)
+				{
+					if (iRelativeIndex != 0)
+					{
+						fTargetOpacity = 0.0f;
+					}
+				}
+				if (window.bDesktopBg)
 				{
 					fTargetOpacity = 0.0f;
 				}
