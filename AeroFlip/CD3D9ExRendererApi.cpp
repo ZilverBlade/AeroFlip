@@ -486,7 +486,7 @@ namespace aeroflip
 			}
 			{
 				D3DXVECTOR3 origin(pvCameraOrigin[0], pvCameraOrigin[1], pvCameraOrigin[2]);
-				D3DXVECTOR3 target(0.0f, 0.0f, 0.0f);
+				D3DXVECTOR3 target(pvCameraOrigin[0], pvCameraOrigin[1], 0.0f);
 				D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
 				D3DXMatrixLookAtLH(&matView, &origin, &target, &up);
 				DEVICE_CALL(m_pD3D9ExDevice->SetTransform(D3DTS_VIEW, &matView));

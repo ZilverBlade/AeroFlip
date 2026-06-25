@@ -201,7 +201,7 @@ int APIENTRY _tWinMain(
 						}
 						else
 						{
-							if (g_DrawObjects[g_uActiveIndex].fPosition[2] <= 0.05f)
+							if (g_DrawObjects[g_uActiveIndex].fPosition[2] <= 0.11f)
 							{
 								bDismissComplete = TRUE;
 							}
@@ -1046,21 +1046,26 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 	FLOAT H_frust = 4.224978f;
 	FLOAT W_frust = H_frust * (Sw / Sh);
 
-	FLOAT fMonitorCornerX = vx + mx;
-	FLOAT fMonitorCornerY = vy + my;
+	FLOAT fMonitorCornerX = (mx - vx);
+	FLOAT fMonitorCornerY = (my - vy);
+
+	FLOAT fMonitorCenterX = fMonitorCornerX + (mcx * 0.5f);
+	FLOAT fMonitorCenterY = fMonitorCornerY + (mcy * 0.5f);
 
 	const FLOAT fRatioX = 1.0f / (Sw / mcx);
 	const FLOAT fRatioY = 1.0f / (Sh / mcy);
 
-	const FLOAT fBaseOffsetCornerX = (fMonitorCornerX / Sw);
-	const FLOAT fBaseOffsetCornerY = (fMonitorCornerY / Sh);
+	//const FLOAT fBaseOffsetCornerX = (fMonitorCornerX / Sw);
+	//const FLOAT fBaseOffsetCornerY = (fMonitorCornerY / Sh);
+	const FLOAT fBaseOffsetCenterX = (fMonitorCenterX / Sw) - 0.5f * W_frust;
+	const FLOAT fBaseOffsetCenterY = 0.5f - (fMonitorCenterY / Sh) * H_frust;
 
-	g_vCameraOrigin[0] = fBaseOffsetCornerX;
-	g_vCameraOrigin[1] = fBaseOffsetCornerY;
+	g_vCameraOrigin[0] = fBaseOffsetCenterX;
+	g_vCameraOrigin[1] = fBaseOffsetCenterY;
 	g_vCameraOrigin[2] = -5.0f;
 
-	const FLOAT fTargetBaseX = 1.0f + fBaseOffsetCornerX;
-	const FLOAT fTargetBaseY = -0.7f + fBaseOffsetCornerY;
+	const FLOAT fTargetBaseX = 1.0f + fBaseOffsetCenterX;
+	const FLOAT fTargetBaseY = -0.7f + fBaseOffsetCenterY;
 	const FLOAT fTargetBaseZ = 3.0f;
 
 	const FLOAT fTargetOffsetX = fRatioX * -g_AeroFlipCfg.sConfig.iHorizontalSpacingMM / 1000.0f;
@@ -1068,6 +1073,10 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 	const FLOAT fTargetOffsetZ = 1.5f;
 
 	const FLOAT fBaseScale = 1.2f;
+
+	const BOOL bDismissToDesktop = g_bIsDismissing
+		&& g_uActiveIndex < (UINT)g_DrawObjects.size()
+		&& g_DrawObjects[g_uActiveIndex].bDesktopBg;
 
 	for (INT i = 0; i < iNumWindows; ++i)
 	{
@@ -1078,8 +1087,8 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 		FLOAT fTargetY = fTargetBaseY + iRelativeIndex * fTargetOffsetY;
 		FLOAT fTargetZ = fTargetBaseZ + iRelativeIndex * fTargetOffsetZ;
 
-		FLOAT fTargetScaleX = max(fRatioX, fRatioY) * fBaseScale;
-		FLOAT fTargetScaleY = max(fRatioX, fRatioY) * fBaseScale;
+		FLOAT fTargetScaleX = fRatioX * fBaseScale;
+		FLOAT fTargetScaleY = fRatioY * fBaseScale;
 
 		FLOAT fTargetRotY = -30.0f;
 		FLOAT fTargetOpacity = 1.0f;
@@ -1091,33 +1100,49 @@ void UpdateWindowAnimations(FLOAT fDeltaTime)
 
 		if (g_bIsDismissing)
 		{
-			// RESTORE
-			FLOAT w = (FLOAT)(window.rcBounds.right - window.rcBounds.left);
-			if (w <= 0)
+			if (bDismissToDesktop)
 			{
-				w = 100.0f;
-			}
-			FLOAT h = (FLOAT)(window.rcBounds.bottom - window.rcBounds.top);
-			if (h <= 0)
-			{
-				h = 100.0f;
-			}
-			FLOAT cx = window.rcBounds.left + w / 2.0f;
-			FLOAT cy = window.rcBounds.top + h / 2.0f;
-
-			fTargetX = (((cx - vx) / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
-			fTargetY = (1.0f - ((cy - vy) / Sh) * 2.0f) * (H_frust / 2.0f);
-			fTargetZ = 0.04f;
-			fTargetRotY = 0.0f;
-			fTargetOpacity = 1.0f;
-
-			FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
-			fTargetScaleX = matchScale;
-			fTargetScaleY = matchScale;
-
-			if (iRelativeIndex != 0 && (window.bDesktopBg || !g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping))
-			{
+				fTargetX = window.fPosition[0];
+				fTargetY = window.fPosition[1];
+				fTargetZ = (iRelativeIndex == 0) ? 0.1f : window.fPosition[2];
+				fTargetRotY = window.fRotationY;
+				fTargetScaleX = window.fScale[0];
+				fTargetScaleY = window.fScale[1];
 				fTargetOpacity = 0.0f;
+			}
+			else
+			{
+				// RESTORE – normal window selected
+				// Animate every card back to its actual screen position.
+				FLOAT w = (FLOAT)(window.rcBounds.right - window.rcBounds.left);
+				if (w <= 0)
+				{
+					w = 100.0f;
+				}
+				FLOAT h = (FLOAT)(window.rcBounds.bottom - window.rcBounds.top);
+				if (h <= 0)
+				{
+					h = 100.0f;
+				}
+				FLOAT cx = window.rcBounds.left + w / 2.0f;
+				FLOAT cy = window.rcBounds.top + h / 2.0f;
+
+				fTargetX = fBaseOffsetCenterX + (((cx - vx) / Sw) * 2.0f - 1.0f) * (W_frust / 2.0f);
+				fTargetY = fBaseOffsetCenterY + (1.0f - ((cy - vy) / Sh) * 2.0f) * (H_frust / 2.0f);
+				fTargetZ = 0.1f;
+				fTargetRotY = 0.0f;
+				fTargetOpacity = 1.0f;
+
+				FLOAT matchScale = (H_frust / Sh) * (h / 2.0f);
+				fTargetScaleX = matchScale;
+				fTargetScaleY = matchScale;
+
+				// Fade out the desktop card and, when not showing the live
+				// desktop preview, fade out every non-selected card too.
+				if (iRelativeIndex != 0 && (window.bDesktopBg || !g_AeroFlipCfg.sConfig.bShowDesktopWhenFlipping))
+				{
+					fTargetOpacity = 0.0f;
+				}
 			}
 		}
 		else if (iRelativeIndex == (iNumWindows - 1) && g_bIsCycling)
