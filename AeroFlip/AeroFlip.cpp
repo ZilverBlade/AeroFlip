@@ -149,6 +149,20 @@ int APIENTRY _tWinMain(
 		g_pWindowProvider = new aeroflip::CWindowProvider(hWnd, g_szWindowClass);
 		g_pWindowProvider->UpdateWindowList();
 
+		{
+			PROFILE_SCOPE(L"Initial Cache Windows");
+
+			UINT cWindows = 0;
+			const aeroflip::SWindowTarget* pWindows = NULL;
+
+			g_pWindowProvider->QueryWindows(&pWindows, &cWindows);
+
+			for (UINT i = 0; i < cWindows; ++i)
+			{
+				g_pWindowProvider->CacheWindowThumbnail(pWindows[i].hWnd);
+			}
+		}
+
 		g_pRenderer = GetRendererApi(&g_AeroFlipCfg.rConfig, hWnd);
 
 		InitializeWindowEventHook();
