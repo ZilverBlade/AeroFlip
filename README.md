@@ -27,7 +27,7 @@ Desktop dimming, and desktop peeking can be configured. By default, the desktop 
 
 _(Running on Windows 10, using other styling tools such as [RetroBar](https://github.com/dremin/Retrobar) and [DWMBlurGlass](https://github.com/Maplespe/DWMBlurGlass), these libraries are NOT included!)_
 
-![AeroFlip Multi Monitor Desktop Example](screenshots/preview.jpg "AeroFlip Activated, with dimming and multi monitor setup")
+![AeroFlip Multi Monitor Desktop Example](screenshots/preview-dimmed.jpg "AeroFlip Activated, with dimming and multi monitor setup")
 
 ![AeroFlip Config Screenshot](screenshots/config.jpg "AeroFlip Configurator")
 
